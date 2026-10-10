@@ -388,6 +388,17 @@ function ledgerNotesZip(entries, { folder = '文献ハブ', today } = {}) {
 }
 
 // ---------- 端末間の引き継ぎ（GitHub Gist 同期・バックアップ）----------
+// GitHub API の失敗を、原因と直し方の文言にする。403 は「権限がない」と「利用制限」の両方で返るので、
+// 応答の見出し（残り回数・トークンのスコープ）・本文・トークンの種類で見分ける
+function ghErrorText({ status, token = '', remaining = null, scopes = null, message = '' } = {}) {
+  if (status === 401) return 'トークンが正しくないか、期限が切れています。設定で入れ直してください。';
+  if (status === 404) return '同期用の Gist が見つかりませんでした。もう一度「接続して同期」を押してください。';
+  if (status !== 403 && status !== 429) return '';
+  if (status === 429 || remaining === '0' || /rate limit/i.test(message)) return 'GitHub の利用制限にかかっています。1時間ほど待ってから、もう一度同期してください。';
+  if (/^github_pat_/.test(token)) return 'このトークン（細かい権限のトークン）に Gist の権限がありません。GitHub の Settings → Developer settings → Fine-grained tokens でこのトークンを開き、Account permissions の「Gists」を「Read and write」にして保存してください。トークンを入れ直す必要はありません。';
+  if (scopes !== null && !String(scopes).split(',').map((x) => x.trim()).includes('gist')) return 'このトークンには gist の権限がありません。設定の「トークンを作る」から、gist にチェックを入れて作り直し、入れ直してください。';
+  return `GitHub に断られました（${message || 'HTTP 403'}）。トークンに gist の権限があるか確かめてください。`;
+}
 const SYNC_KEYS = ['email', 'name', 'folder', 'fmt', 'cinii'];   // 端末をまたいで共有する設定。トークン・API キー・表示テーマは含めない
 const TOMB_KEEP_DAYS = 365;
 const SYNC_FILE = 'bunken-hub-sync.json';
@@ -616,5 +627,5 @@ if (typeof module !== 'undefined') {
   module.exports = { esc, safeUrl, hasJa, parseInput, splitName, nameStr, fromOpenAlex, fromCSL, fromCiNii, fromWatchPaper, watchTags, fromNdlItem, ZOTERO_API, ZOTERO_BATCH, toZoteroItem, zoteroChildren, parseZoteroWrite, zoteroKeyInfo, zoteroItemUrl, WATCH_RULES, normText, studyFacts, glossaryHits,
     reconstructAbstract, extractDois, bibKey, toBibTeX, toCitation, fileName, requestMail, searchLinks, toObsidian, verJa,
     toRIS, availability, authorLinks, graphLinks, translateUrl, isEmail, bookmarklet, filterLedger,
-    SYNC_KEYS, SYNC_FILE, compactMeta, mergeLedgers, mergeSync, buildSyncPayload, buildBackup, parseImport, sharedQuery, setupSteps, showSetupCard, fromEuropePmc, fromSemanticScholar, mergeOa, filterCands, normTag, allTags, toCSL, toMarkdownLink, crc32, makeZip, ledgerNotesZip };
+    SYNC_KEYS, SYNC_FILE, ghErrorText, compactMeta, mergeLedgers, mergeSync, buildSyncPayload, buildBackup, parseImport, sharedQuery, setupSteps, showSetupCard, fromEuropePmc, fromSemanticScholar, mergeOa, filterCands, normTag, allTags, toCSL, toMarkdownLink, crc32, makeZip, ledgerNotesZip };
 }

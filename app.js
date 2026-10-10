@@ -697,7 +697,13 @@ let syncing = false; let syncTimer = 0; let resync = false;
 let syncState = 'off';
 async function gh(path, opts = {}) {
   const r = await fetch(GH + path, { ...opts, headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${settings.gistToken}`, ...(opts.body ? { 'Content-Type': 'application/json' } : {}) } });
-  if (!r.ok) { const e = new Error('HTTP ' + r.status); e.status = r.status; throw e; }
+  if (!r.ok) {
+    // 原因を見分けるため、残り回数・スコープ・本文の message を添える（読めなければ無いものとして扱う）
+    const e = new Error('HTTP ' + r.status); e.status = r.status;
+    e.remaining = r.headers.get('x-ratelimit-remaining'); e.scopes = r.headers.get('x-oauth-scopes');
+    try { e.ghMessage = String((await r.json()).message || ''); } catch { e.ghMessage = ''; }
+    throw e;
+  }
   return r.json();
 }
 async function readGist(id) {
@@ -718,9 +724,8 @@ async function findGist() {
   return '';
 }
 function syncErrorText(e) {
-  if (e.status === 401) return 'トークンが正しくないか、期限が切れています。設定で入れ直してください。';
-  if (e.status === 403) return 'トークンに gist の権限がないか、GitHub の利用制限にかかっています。';
-  if (e.status === 404) return '同期用の Gist が見つかりませんでした。もう一度「接続して同期」を押してください。';
+  const t = ghErrorText({ status: e.status, token: settings.gistToken || '', remaining: e.remaining ?? null, scopes: e.scopes ?? null, message: e.ghMessage || '' });
+  if (t) return t;
   if (e instanceof SyntaxError) return '同期データを読み取れませんでした。';
   return 'GitHub に接続できませんでした。通信を確かめてください。';
 }
