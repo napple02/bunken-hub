@@ -1,0 +1,30 @@
+{
+  "id": "./",
+  "name": "文献ハブ",
+  "short_name": "文献ハブ",
+  "description": "DOI・URL・タイトルから、論文の書誌と本文の入手ルートをまとめて引く個人用ハブ",
+  "lang": "ja",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f2f5f4",
+  "theme_color": "#1f5f6b",
+  "categories": ["education", "productivity", "books"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "台帳を開く", "short_name": "台帳", "url": "./#ledger", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "使い方", "short_name": "使い方", "url": "./#about", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ],
+  "share_target": {
+    "action": "./",
+    "method": "GET",
+    "params": { "title": "title", "text": "text", "url": "url" }
+  }
+}

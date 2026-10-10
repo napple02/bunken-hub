@@ -304,8 +304,102 @@ function filterLedger(list, { status = 'all', text = '', sort = 'added' } = {}) 
   return by ? out.sort(by) : out;
 }
 
+// ---------- 端末間の引き継ぎ（GitHub Gist 同期・バックアップ）----------
+const SYNC_KEYS = ['email', 'name', 'folder', 'fmt', 'cinii'];   // 端末をまたいで共有する設定。トークン・API キー・表示テーマは含めない
+const TOMB_KEEP_DAYS = 365;
+const SYNC_FILE = 'bunken-hub-sync.json';
+
+// 台帳や同期データに保存する書誌は軽くする（関連文献の ID 群は開くたびに取り直せる）
+function compactMeta(m) {
+  const { refIds, relIds, orcids, ...rest } = m || {};
+  return rest;
+}
+const stamp = (e) => String(e.updatedAt || (e.addedAt ? e.addedAt + 'T00:00:00.000Z' : '') || '');
+
+// 端末ごとの台帳 {entries, tombs} と、もう一方の端末のデータをマージする。
+// 同じ ID は updatedAt が新しいほうを採用し、削除は tombs（墓標）で伝える。同時刻なら残す側（entry）を優先する。
+function mergeLedgers(local, remote, now = new Date()) {
+  const latest = new Map();   // id → { t, entry|null }
+  const put = (id, t, entry) => {
+    const cur = latest.get(id);
+    if (!cur || t > cur.t || (t === cur.t && entry && !cur.entry)) latest.set(id, { t, entry });
+  };
+  for (const side of [local, remote]) {
+    for (const e of side?.entries || []) if (e && e.id) put(e.id, stamp(e), e);
+    for (const t of side?.tombs || []) if (t && t.id) put(t.id, String(t.updatedAt || ''), null);
+  }
+  const keep = new Date(now.getTime() - TOMB_KEEP_DAYS * 864e5).toISOString();
+  const entries = []; const tombs = [];
+  for (const [id, { t, entry }] of latest) {
+    if (entry) entries.push(entry);
+    else if (t >= keep) tombs.push({ id, updatedAt: t });
+  }
+  entries.sort((a, b) => stamp(b).localeCompare(stamp(a)));
+  return { entries, tombs };
+}
+
+const sameJson = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+// 並び順や書誌の軽量化の違いで「変更あり」と誤判定しないよう、id と更新時刻だけで比べる
+const sig = (list) => (list || []).map((e) => `${e.id}|${stamp(e)}`).sort().join('\n');
+const pickSync = (settings) => Object.fromEntries(SYNC_KEYS.filter((k) => settings?.[k]).map((k) => [k, settings[k]]));
+
+// 同期データ（remote）を手元（local）に取り込む。
+// 戻り値: 新しい手元の状態 next と、リモートを更新する必要があるか（push）、手元が変わったか（pull）
+function mergeSync(local, remote, now = new Date()) {
+  const rs = remote && remote.settings ? remote : null;
+  const merged = mergeLedgers(local, { entries: remote?.ledger || [], tombs: remote?.tombs || [] }, now);
+  const lSet = pickSync(local.settings);
+  const lAt = String(local.settings?.settingsUpdatedAt || '');
+  const rAt = String(rs?.settings?.settingsUpdatedAt || '');
+  const useRemote = !!rs && rAt > lAt;
+  const outSet = useRemote ? { ...pickSync(rs.settings) } : lSet;
+  const settingsAt = useRemote ? rAt : lAt;
+  const next = { entries: merged.entries, tombs: merged.tombs, settings: outSet, settingsUpdatedAt: settingsAt };
+  const pull = sig(merged.entries) !== sig(local.entries) || sig(merged.tombs) !== sig(local.tombs) || (useRemote && !sameJson(lSet, outSet));
+  const push = !remote || sig(merged.entries) !== sig(remote.ledger) || sig(merged.tombs) !== sig(remote.tombs) ||
+    (!useRemote && lAt > rAt && !sameJson(lSet, pickSync(rs?.settings)));
+  return { next, pull, push };
+}
+
+// リモートへ書き込むデータ
+function buildSyncPayload(state, now = new Date()) {
+  return {
+    app: 'bunken-hub', version: 2, updatedAt: now.toISOString(),
+    settings: { ...state.settings, settingsUpdatedAt: state.settingsUpdatedAt || '' },
+    ledger: state.entries.map((e) => ({ ...e, meta: compactMeta(e.meta) })),
+    tombs: state.tombs,
+  };
+}
+
+// 手動のバックアップ（JSON）。設定（秘密の値を除く）も入れる
+function buildBackup(settings, entries, now = new Date()) {
+  return { app: 'bunken-hub', version: 2, exportedAt: now.toISOString(), settings: pickSync(settings), ledger: entries.map((e) => ({ ...e, meta: compactMeta(e.meta) })) };
+}
+// 読み込んだ JSON を {kind, entries, settings} に整える。kind: 'backup' | 'watch'
+function parseImport(data) {
+  if (Array.isArray(data)) {
+    if (data[0] && !data[0].meta && 'journal' in data[0] && 'title' in data[0]) return { kind: 'watch', papers: data };
+    return { kind: 'backup', entries: data.filter((e) => e && e.id && e.meta), settings: {} };
+  }
+  if (data && data.app === 'bunken-hub' && Array.isArray(data.ledger)) {
+    return { kind: 'backup', entries: data.ledger.filter((e) => e && e.id && e.meta), settings: pickSync(data.settings) };
+  }
+  return null;
+}
+
+// 共有メニュー（Web Share Target）や URL のパラメータから、検索する文字列を決める。DOI があれば最優先
+function sharedQuery(params) {
+  const get = (k) => String(params.get ? params.get(k) || '' : params[k] || '').trim();
+  const [url, text, title] = [get('url'), get('text'), get('title')];
+  for (const v of [url, text, title]) { const d = extractDois(v)[0]; if (d) return d; }
+  for (const v of [url, text]) { const m = v.match(/https?:\/\/[^\s]+/); if (m && /arxiv\.org/i.test(m[0])) return m[0]; }
+  const plain = [title, text].find((v) => v && !/^https?:\/\/\S+$/.test(v));
+  return plain || url || '';
+}
+
 if (typeof module !== 'undefined') {
   module.exports = { esc, safeUrl, hasJa, parseInput, splitName, nameStr, fromOpenAlex, fromCSL, fromCiNii, fromWatchPaper, fromNdlItem,
     reconstructAbstract, extractDois, bibKey, toBibTeX, toCitation, fileName, requestMail, searchLinks, toObsidian, verJa,
-    toRIS, availability, authorLinks, graphLinks, translateUrl, isEmail, bookmarklet, filterLedger };
+    toRIS, availability, authorLinks, graphLinks, translateUrl, isEmail, bookmarklet, filterLedger,
+    SYNC_KEYS, SYNC_FILE, compactMeta, mergeLedgers, mergeSync, buildSyncPayload, buildBackup, parseImport, sharedQuery };
 }

@@ -5,6 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>文献ハブ</title>
 <meta name="description" content="DOI・URL・タイトルから、論文の書誌と本文の入手ルートをまとめて引く個人用ハブ">
+<meta name="theme-color" content="#f2f5f4" media="(prefers-color-scheme: light)" data-scheme="light">
+<meta name="theme-color" content="#131a1c" media="(prefers-color-scheme: dark)" data-scheme="dark">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="文献ハブ">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<script>try { const t = JSON.parse(localStorage.getItem('bunkenhub.settings.v1') || '{}').theme; if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=Shippori+Mincho:wght@500;700&family=IBM+Plex+Mono:wght@400&display=swap">
 <link rel="stylesheet" href="style.css">
@@ -17,17 +28,22 @@
       <nav class="nav" aria-label="メニュー">
         <a href="#ledger" class="navlink">台帳 <span id="navcount" class="pill"></span></a>
         <a href="#about" class="navlink" id="openAbout">使い方</a>
+        <button type="button" id="installBtn" class="navlink install" hidden>アプリとして追加</button>
+        <button type="button" id="syncBtn" class="navlink sync" data-state="off" aria-live="polite"><span class="sdot" aria-hidden="true"></span><span id="syncLabel">同期</span></button>
         <button type="button" id="openSettings" class="navlink">設定</button>
       </nav>
     </div>
     <form id="f" class="search-row" role="search">
-      <input id="q" type="search" placeholder="DOI・論文のURL・タイトル（日本語可）を入れて Enter" autocomplete="off" aria-label="DOI、URL、タイトル" enterkeyhint="search">
+      <input id="q" type="search" placeholder="DOI・URL・タイトル" autocomplete="off" aria-label="DOI、URL、タイトル" enterkeyhint="search">
+      <button type="button" id="pasteBtn" class="paste" title="コピーした DOI や URL を貼り付けて調べる">貼り付け</button>
       <button class="primary" type="submit" id="go">調べる</button>
     </form>
   </div>
 </header>
 
 <main class="wrap">
+  <div id="offline" class="topnote" role="status" hidden>オフラインです。画面と台帳は使えますが、論文の検索や同期はつながってからになります。</div>
+  <div id="update" class="topnote" role="status" hidden>新しい版に更新されました。 <button type="button" id="reload">再読み込み</button></div>
   <section id="setup" class="setup" hidden aria-labelledby="setupTitle">
     <div>
       <h2 id="setupTitle">はじめに：メールアドレスを登録してください</h2>
@@ -154,11 +170,25 @@
         <p>次のボタンをブックマークバーへドラッグしてください。論文のページでそれを押すと、ページ内の DOI を拾って文献ハブを開きます。</p>
         <p><a id="bm" class="bm" href="#">文献ハブで開く</a></p>
 
+        <h3>アプリとして使う（ホーム画面に追加）</h3>
+        <ul>
+          <li><b>Android・パソコンの Chrome / Edge</b>：画面上部の「アプリとして追加」を押すか、ブラウザのメニューから「アプリをインストール」を選びます。</li>
+          <li><b>iPhone・iPad の Safari</b>：共有ボタン →「ホーム画面に追加」。</li>
+          <li>追加すると、アドレスバーのない全画面で開きます。画面と台帳はオフラインでも開けます（検索には通信が必要です）。</li>
+          <li>Android では、他のアプリの「共有」から文献ハブを選ぶと、論文ページの DOI をそのまま調べます。</li>
+        </ul>
+
+        <h3>別の端末へ引き継ぐ</h3>
+        <ul>
+          <li><b>同期（おすすめ）</b>：「設定」→「他の端末と同期」で GitHub のトークン（gist の権限だけ）を入れて「接続して同期」。ほかの端末では、同じトークンを入れるだけで台帳と設定が届きます。以後は変更のたびに自動で合わせます。</li>
+          <li><b>ファイルで移す</b>：「書き出し・読み込み」で JSON を書き出し、別の端末で「JSON を読み込む」。設定（メールアドレスなど）も一緒に入ります。トークンは含まれません。</li>
+        </ul>
+
         <h3>データの扱い</h3>
         <ul>
-          <li>台帳と設定は、このブラウザの中（localStorage）にだけ保存されます。サーバーには送りません。</li>
-          <li>メールアドレスは、Unpaywall・OpenAlex・Crossref への問い合わせにだけ添えます。</li>
-          <li>ブラウザのデータを消すと台帳も消えます。「書き出し・読み込み」の JSON で、ときどき Google ドライブなどへバックアップしてください。</li>
+          <li>台帳と設定は、このブラウザの中（localStorage）に保存されます。同期を使わない限り、サーバーには送りません。</li>
+          <li>メールアドレスは、Unpaywall・OpenAlex・Crossref への問い合わせにだけ添えます。同期を使う場合は、あなたの GitHub のシークレット Gist にも保存されます。</li>
+          <li>ブラウザのデータを消すと、この端末の台帳は消えます。同期していない場合は、「書き出し・読み込み」の JSON で、ときどき Google ドライブなどへバックアップしてください。</li>
         </ul>
 
         <h3>できないこと</h3>
@@ -174,7 +204,7 @@
 <dialog id="settings" aria-labelledby="settingsTitle">
   <form method="dialog" id="settingsForm" class="settings">
     <div class="panel-h"><h2 id="settingsTitle">設定</h2><button value="cancel" class="ghost" aria-label="閉じる">閉じる</button></div>
-    <label>メールアドレス <span class="req">推奨</span>
+    <label><span>メールアドレス <span class="req">推奨</span></span>
       <input id="s_email" type="email" placeholder="you@example.com" autocomplete="email">
       <small>Unpaywall の利用に必要です。OpenAlex・Crossref にも連絡先として渡します。</small></label>
     <label>依頼文に入れる名前
@@ -183,6 +213,32 @@
     <label>PDF の保存先フォルダの URL
       <input id="s_folder" type="url" placeholder="https://drive.google.com/drive/folders/...">
       <small>Google ドライブや Dropbox のフォルダ。詳細画面から1クリックで開けます。</small></label>
+    <label>表示
+      <select id="s_theme">
+        <option value="">端末の設定に合わせる</option>
+        <option value="light">ライト</option>
+        <option value="dark">ダーク</option>
+      </select>
+      <small>この端末だけの設定です。</small></label>
+    <fieldset class="syncbox" id="syncBox">
+      <legend>他の端末と同期</legend>
+      <p class="sub">台帳と設定を、あなたの GitHub アカウントの「シークレット Gist」に預けて、別の端末へ引き継ぎます。別の端末では、同じトークンを入れるだけです。</p>
+      <label>GitHub のトークン（gist の権限だけ）
+        <input id="s_token" type="password" autocomplete="off" spellcheck="false" placeholder="ghp_...">
+        <small><a href="https://github.com/settings/tokens/new?scopes=gist&amp;description=bunken-hub" target="_blank" rel="noopener">トークンを作る</a>（gist にチェックが入った状態で開きます）。トークンはこの端末の中にだけ保存し、同期データには入れません。</small></label>
+      <label class="check"><input type="checkbox" id="s_auto" checked> 変更したら自動で同期する</label>
+      <div class="row"><button type="button" id="syncConnect" class="primary">接続して同期</button><button type="button" id="syncOff" class="ghost" hidden>接続を解除</button></div>
+      <p id="syncInfo" class="sub" role="status"></p>
+      <details>
+        <summary>しくみと注意</summary>
+        <ul class="sub plain">
+          <li>同期するのは、台帳（文献・状態・メモ）と、メールアドレス・名前・保存先フォルダ・引用形式・CiNii appid です。トークンと OpenAlex の API キーは同期しません。</li>
+          <li>シークレット Gist は、検索には出ませんが、URL を知っている人なら誰でも読めます。メールアドレスや台帳の内容が入るので、URL は人に見せないでください。気になる場合は、同期せず、JSON のバックアップで手動で移してください。</li>
+          <li>2台で同時に編集しても、文献ごとに新しいほうを残して合わせます。同じメモを両方で書き換えたときは、あとから保存したほうが残ります。</li>
+          <li>接続を解除しても、GitHub 上の Gist は消えません。消すときは GitHub の Gist のページから削除してください。</li>
+        </ul>
+      </details>
+    </fieldset>
     <details>
       <summary>詳しい設定</summary>
       <div class="stack">
@@ -201,5 +257,6 @@
 <div id="toast" class="toast" role="status" hidden></div>
 <script src="lib.js"></script>
 <script src="app.js"></script>
+<script src="pwa.js"></script>
 </body>
 </html>
