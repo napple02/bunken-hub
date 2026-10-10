@@ -55,6 +55,7 @@
 - **週報・月報から取り込む**：台帳の「DOI をまとめて追加」に、`reports/weekly/*.md` などの Markdown をそのまま貼り付けると、含まれている DOI を拾って未入手として追加する
 - **JSON をそのまま読み込む**：`papers.json` / `rising_papers.json` / `data/weekly_buffer.json` などを「JSONを読み込む」で選ぶと、`score` 上位 50 件を取り込む。訳題（`title_ja`）・無料版（`oa_status`・`oa_url`）・撤回の印も引き継ぎ、`#ウォッチ` と研究デザイン（`#RCT`・`#メタ分析` など）のタグを付ける
 - **リンクで開く**：`index.html?q=<DOI>` で開くと、その DOI をすぐに調べる。ウォッチの週報・月報の「入手」欄に、このリンク（「文献ハブで入手ルートを見る」）と無料版の有無が出る。無料版の区分は、こちらの「入手しやすさの帯」と同じ言葉に揃えている
+- **判定規則と用語辞書を共有**：ウォッチの研究デザイン・サンプル数の判定規則と用語辞書（`data/shared_rules.json`）を `lib.js` の `WATCH_RULES` に取り込んでいる。詳細画面に「研究の型：RCT · N=1,250」を出し、abstract の下に専門用語の訳（`cognitive load＝認知負荷` など。機械翻訳の誤訳を見分ける手がかり）を並べる。Obsidian ノートの frontmatter にも `title_ja`・`design`・`sample_size` を入れる。ウォッチ側で規則を変えたら `node scripts/sync-watch-rules.mjs <edu-research-watch>/data/shared_rules.json` で取り込み直す
 - 週報の Markdown を貼ったとき、入手ルートのリンクの DOI（括弧が `%28` などにエンコードされている）も正しく読む
 - 参考にした実装：OpenAlex の abstract の復元、API キーの渡し方、Obsidian の frontmatter
 

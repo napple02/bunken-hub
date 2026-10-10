@@ -51,6 +51,7 @@ function fromOpenAlex(w) {
     cited: w.cited_by_count,
     abstract: reconstructAbstract(w.abstract_inverted_index),
     oaid: String(w.id || '').replace(/^https?:\/\/openalex\.org\//i, ''),
+    type: w.type || '',
     retracted: !!w.is_retracted,
     corresponding: (w.authorships || []).findIndex((a) => a.is_corresponding),
     orcids: (w.authorships || []).map((a) => a.author?.orcid || ''),
@@ -220,6 +221,7 @@ function fromNdlItem(o) {
 // Obsidian 用のノート。edu-research-watch の vault 出力と同じ frontmatter の並びに揃える
 function toObsidian(m, opts = {}) {
   const today = opts.today || new Date().toISOString().slice(0, 10);
+  const facts = studyFacts(m);
   const q = (v) => '"' + String(v ?? '').replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
   const fm = [
     '---',
@@ -231,6 +233,9 @@ function toObsidian(m, opts = {}) {
     m.doi ? `doi: ${q(m.doi)}` : null,
     m.year ? `year: ${m.year}` : null,
     m.venue ? `journal: ${q(m.venue)}` : null,
+    m.title_ja ? `title_ja: ${q(m.title_ja)}` : null,
+    facts.labels.length ? `design: [${facts.labels.map(q).join(', ')}]` : null,
+    facts.n != null ? `sample_size: ${facts.n}` : null,
     `authors: [${m.authors.map((a) => q(nameStr(a))).join(', ')}]`,
     opts.status ? `status: ${opts.status}` : null,
     opts.star ? 'star: true' : null,
@@ -523,8 +528,49 @@ function filterCands(items, { oaOnly = false, jaOnly = false, sort = 'rel' } = {
   return by ? [...out].sort(by) : out;
 }
 
+// ---------- edu-research-watch と共有する判定規則 ----------
+// 研究デザイン・サンプル数の判定と、訳語を固定する用語辞書。ウォッチの data/shared_rules.json の写し。
+// 手で編集しない。ウォッチ側で規則を変えたら scripts/sync-watch-rules.mjs で取り込み直す
+// <watch-rules> 自動生成（scripts/sync-watch-rules.mjs）
+const WATCH_RULES = {"schema_version":1,"source":"edu-research-watch","designs":{"rct":["randomized controlled trial","randomised controlled trial","cluster randomized","cluster randomised","randomized trial","randomised trial"],"meta_review":["meta-analysis","meta analysis","systematic review","systematic meta-analysis"],"quasi_natural":["natural experiment","quasi-experiment","quasi experiment","difference-in-differences","regression discontinuity","instrumental variable"],"longitudinal":["longitudinal","prospective cohort","follow-up study"]},"design_labels":{"rct":"RCT","meta_review":"メタ分析・系統レビュー","quasi_natural":"準実験・自然実験","longitudinal":"縦断研究"},"review_title_pattern":"\\b(?:systematic reviews?|meta analys[ie]s|(?:a|narrative|clinical|scoping) review)\\b","sample_patterns":[{"source":"\\b[nN]\\s*[=:]\\s*([0-9][0-9,]{1,8})\\b","flags":""},{"source":"\\b(?:sample\\s+(?:of|comprised|included)|enrolled|included|recruited)\\s+([0-9][0-9,]{1,8})\\b","flags":"i"},{"source":"\\b([0-9][0-9,]{2,8})\\s+(?:participants|students|children|adolescents|pupils|teachers|schools|patients|learners)\\b","flags":"i"}],"glossary":{"physical education":"体育","higher education":"高等教育","teacher education":"教員養成","pre-service teachers":"教員養成課程の学生","pre-service teacher":"教員養成課程の学生","pre-service":"養成段階の","in-service teachers":"現職教員","in-service":"現職の","curriculum":"カリキュラム","secondary school":"中等学校","primary school":"小学校","elementary school":"小学校","early childhood education":"幼児教育","homicides":"殺人","homicide":"殺人","race-related":"人種","primary mathematics":"小学校算数","elementary mathematics":"小学校算数","mathematics education":"数学教育","mathematics teacher":"数学教師","mathematical thinking":"数学的思考","proportional reasoning":"比例的推論","number sense":"数感覚","number line":"数直線","word problems":"文章題","word problem":"文章題","fractions":"分数","fraction":"分数","arithmetic":"算数","numeracy":"数的リテラシー","spatial thinking":"空間的思考","problem posing":"問題づくり","problem solving":"問題解決","cognitive load":"認知負荷","retrieval practice":"検索練習","worked examples":"例題","worked example":"例題","metacognition":"メタ認知","misconceptions":"誤概念","misconception":"誤概念","conceptual understanding":"概念的理解","self-efficacy":"自己効力感","lesson study":"授業研究","formative assessment":"形成的評価","instructional design":"授業設計","classroom discourse":"教室談話","pedagogical content knowledge":"授業を支える教科内容知識","translanguaging":"トランスランゲージング","randomized controlled trial":"ランダム化比較試験","systematic review":"システマティックレビュー","meta-analysis":"メタ分析","quasi-experimental":"準実験","mixed methods":"混合研究法"}};
+// </watch-rules>
+
+// ウォッチの normalize_text と同じ：NFKC・小文字・記号を空白に
+const normText = (s) => String(s || '').normalize('NFKC').toLowerCase().replace(/<[^>]+>/g, ' ').replace(/[^\p{L}\p{N}_\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+// 論文の本文（題名＋abstract）から、研究デザインとサンプル数を一次判定する。レビュー論文は総説・メタ分析だけを残す
+function studyFacts(m) {
+  const R = WATCH_RULES;
+  const title = m.title || '';
+  const raw = `${title} ${m.abstract || ''}`;
+  const t = normText(raw);
+  let design = Object.entries(R.designs || {}).filter(([, terms]) => terms.some((x) => t.includes(normText(x)))).map(([k]) => k);
+  const review = /review/i.test(m.type || '') || (R.review_title_pattern && new RegExp(R.review_title_pattern).test(normText(title)));
+  if (review) design = design.filter((k) => k === 'meta_review');
+  let n = null;
+  for (const p of R.sample_patterns || []) {
+    for (const x of raw.matchAll(new RegExp(p.source, p.flags + 'g'))) { const v = parseInt(x[1].replace(/,/g, ''), 10); if (v > (n ?? -1)) n = v; }
+  }
+  return { design, labels: design.map((k) => (R.design_labels || {})[k] || k), n };
+}
+// 英文に出てくる用語と、その訳語（長い語から照合し、重なりと同じ訳語は1回だけ）
+function glossaryHits(text, max = 12) {
+  let rest = ` ${String(text || '').toLowerCase()} `;
+  const out = []; const seen = new Set();
+  const terms = Object.keys(WATCH_RULES.glossary || {}).sort((a, b) => b.length - a.length);
+  for (const term of terms) {
+    const re = new RegExp(`(?<![\\p{L}\\p{N}_])${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+')}(?![\\p{L}\\p{N}_])`, 'giu');
+    if (!re.test(rest)) continue;
+    rest = rest.replace(re, (s) => ' '.repeat(s.length));
+    const ja = WATCH_RULES.glossary[term];
+    if (seen.has(ja)) continue;
+    seen.add(ja); out.push([term, ja]);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
 if (typeof module !== 'undefined') {
-  module.exports = { esc, safeUrl, hasJa, parseInput, splitName, nameStr, fromOpenAlex, fromCSL, fromCiNii, fromWatchPaper, watchTags, fromNdlItem,
+  module.exports = { esc, safeUrl, hasJa, parseInput, splitName, nameStr, fromOpenAlex, fromCSL, fromCiNii, fromWatchPaper, watchTags, fromNdlItem, WATCH_RULES, normText, studyFacts, glossaryHits,
     reconstructAbstract, extractDois, bibKey, toBibTeX, toCitation, fileName, requestMail, searchLinks, toObsidian, verJa,
     toRIS, availability, authorLinks, graphLinks, translateUrl, isEmail, bookmarklet, filterLedger,
     SYNC_KEYS, SYNC_FILE, compactMeta, mergeLedgers, mergeSync, buildSyncPayload, buildBackup, parseImport, sharedQuery, setupSteps, showSetupCard, fromEuropePmc, fromSemanticScholar, mergeOa, filterCands, normTag, allTags, toCSL, toMarkdownLink, crc32, makeZip, ledgerNotesZip };
