@@ -4,88 +4,201 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>文献ハブ</title>
+<meta name="description" content="DOI・URL・タイトルから、論文の書誌と本文の入手ルートをまとめて引く個人用ハブ">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=Shippori+Mincho:wght@500;700&family=IBM+Plex+Mono:wght@400&display=swap">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <h1>文献ハブ</h1>
-    <span class="sub">DOI・URL・タイトルから、書誌と本文の入手ルートをまとめて引く</span>
-  </header>
-
-  <section class="search" aria-label="検索">
-    <form id="f" class="search-row">
-      <input id="q" type="text" placeholder="DOI、論文のURL、またはタイトル（日本語可）" autocomplete="off" aria-label="DOI、URL、タイトル">
-      <button class="primary" type="submit">調べる</button>
-    </form>
-    <div class="chips">例:
-      <button type="button" data-ex="10.1038/nature14539">10.1038/nature14539</button>
-      <button type="button" data-ex="https://arxiv.org/abs/1706.03762">arXiv URL</button>
-      <button type="button" data-ex="分子模型 教育">分子模型 教育</button>
+<header class="top">
+  <div class="top-in">
+    <div class="brand">
+      <h1><a href="./" id="home">文献ハブ</a></h1>
+      <nav class="nav" aria-label="メニュー">
+        <a href="#ledger" class="navlink">台帳 <span id="navcount" class="pill"></span></a>
+        <a href="#about" class="navlink" id="openAbout">使い方</a>
+        <button type="button" id="openSettings" class="navlink">設定</button>
+      </nav>
     </div>
-    <div id="status" class="status" role="status"></div>
+    <form id="f" class="search-row" role="search">
+      <input id="q" type="search" placeholder="DOI・論文のURL・タイトル（日本語可）を入れて Enter" autocomplete="off" aria-label="DOI、URL、タイトル" enterkeyhint="search">
+      <button class="primary" type="submit" id="go">調べる</button>
+    </form>
+  </div>
+</header>
+
+<main class="wrap">
+  <section id="setup" class="setup" hidden aria-labelledby="setupTitle">
+    <div>
+      <h2 id="setupTitle">はじめに：メールアドレスを登録してください</h2>
+      <p>無料で読める版を探す Unpaywall は、連絡先のメールアドレスがないと使えません。アドレスはこのブラウザの中にだけ保存し、Unpaywall・OpenAlex・Crossref への問い合わせにだけ使います。</p>
+    </div>
+    <form id="setupForm" class="setup-form">
+      <label for="setupEmail" class="sr">メールアドレス</label>
+      <input id="setupEmail" type="email" placeholder="you@example.com" autocomplete="email" required>
+      <button class="primary" type="submit">登録する</button>
+      <button type="button" id="setupLater" class="ghost">あとで</button>
+    </form>
+    <p id="setupErr" class="err" hidden></p>
   </section>
 
-  <section id="cands" class="panel" hidden aria-label="候補">
-    <h3>候補（クリックで詳細）</h3>
+  <section class="hint" id="intro" aria-label="入力例">
+    <div id="recentBox" hidden>
+      <span class="hint-h">最近調べた論文</span>
+      <div id="recent" class="chips"></div>
+    </div>
+    <div>
+      <span class="hint-h">試す</span>
+      <div class="chips">
+        <button type="button" data-ex="10.1038/nature14539">DOI: 10.1038/nature14539</button>
+        <button type="button" data-ex="https://arxiv.org/abs/1706.03762">arXiv の URL</button>
+        <button type="button" data-ex="分子模型 教育">分子模型 教育</button>
+      </div>
+    </div>
+  </section>
+
+  <div id="status" class="status" role="status" aria-live="polite"></div>
+
+  <section id="cands" class="panel" hidden aria-labelledby="candsTitle">
+    <div class="panel-h"><h2 id="candsTitle">候補</h2><span class="sub" id="candsNote"></span></div>
     <div id="candlist" class="cands"></div>
   </section>
 
-  <section id="detail" class="panel" hidden aria-label="詳細"></section>
+  <article id="detail" class="panel detail" hidden aria-label="論文の詳細"></article>
 
-  <section class="panel" aria-label="台帳">
-    <div class="copyrow">
-      <h2>台帳</h2>
+  <section id="ledger" class="panel" aria-labelledby="ledgerTitle">
+    <div class="panel-h">
+      <h2 id="ledgerTitle">台帳</h2>
       <span id="lcount" class="sub"></span>
     </div>
+    <div id="backupNote" class="note" hidden></div>
     <div class="ledger-tools">
-      <div class="tabs" role="tablist" id="ltabs">
-        <button type="button" role="tab" data-st="all" aria-selected="true">すべて</button>
-        <button type="button" role="tab" data-st="want" aria-selected="false">未入手</button>
-        <button type="button" role="tab" data-st="have" aria-selected="false">入手済</button>
-        <button type="button" role="tab" data-st="read" aria-selected="false">読了</button>
+      <div class="tabs" role="tablist" id="ltabs" aria-label="状態で絞り込む">
+        <button type="button" role="tab" data-st="all" aria-selected="true">すべて <span class="n"></span></button>
+        <button type="button" role="tab" data-st="want" aria-selected="false">未入手 <span class="n"></span></button>
+        <button type="button" role="tab" data-st="have" aria-selected="false">入手済 <span class="n"></span></button>
+        <button type="button" role="tab" data-st="read" aria-selected="false">読了 <span class="n"></span></button>
       </div>
-      <span style="flex:1"></span>
-      <button type="button" id="exJson">JSONで書き出し</button>
-      <button type="button" id="exBib">BibTeXで書き出し</button>
-      <button type="button" id="exCsv">CSVで書き出し</button>
-      <label class="sub" style="cursor:pointer"><input type="file" id="imJson" accept="application/json,.json" hidden><span style="text-decoration:underline">JSONを読み込む</span></label>
+      <div class="ledger-find">
+        <label for="lfind" class="sr">台帳内を検索</label>
+        <input id="lfind" type="search" placeholder="タイトル・著者・メモで絞り込む">
+        <label for="lsort" class="sr">並べ替え</label>
+        <select id="lsort">
+          <option value="added">追加が新しい順</option>
+          <option value="year">発行年が新しい順</option>
+          <option value="title">タイトル順</option>
+        </select>
+      </div>
     </div>
     <div class="tablewrap"><table>
-      <thead><tr><th>年</th><th>文献</th><th>状態</th><th>メモ</th><th></th></tr></thead>
+      <thead><tr><th>年</th><th>文献</th><th>状態</th><th>メモ</th><th><span class="sr">操作</span></th></tr></thead>
       <tbody id="ltbody"></tbody>
     </table></div>
-    <details>
-      <summary>DOI をまとめて追加</summary>
-      <div class="settings">
-        <label>DOI を含む文章をそのまま貼り付け（edu-research-watch の週報・月報の Markdown など）
-          <textarea id="bulk" rows="4" placeholder="https://doi.org/10.1007/s10649-026-10563-9 ..."></textarea></label>
-        <div><button type="button" id="bulkAdd" class="primary">未入手として追加</button></div>
-        <small>edu-research-watch の <code>papers.json</code> などは、上の「JSONを読み込む」からそのまま取り込めます（スコア上位 50 件）。</small>
-      </div>
-    </details>
-    <p class="sub" style="margin:0">台帳はこのブラウザの中にだけ保存されます。ときどき「JSONで書き出し」て Google ドライブや Dropbox に置いておくと安心です。</p>
+    <div class="ledger-more">
+      <details>
+        <summary>DOI をまとめて追加</summary>
+        <div class="stack">
+          <label for="bulk">DOI を含む文章をそのまま貼り付けてください（edu-research-watch の週報・月報の Markdown など）</label>
+          <textarea id="bulk" rows="4" placeholder="https://doi.org/10.1007/s10649-026-10563-9 ..."></textarea>
+          <div class="row"><button type="button" id="bulkAdd" class="primary">未入手として追加</button><span id="bulkCount" class="sub"></span></div>
+        </div>
+      </details>
+      <details>
+        <summary>書き出し・読み込み</summary>
+        <div class="stack">
+          <div class="row wrap-row">
+            <button type="button" id="exJson">JSON（バックアップ）</button>
+            <button type="button" id="exBib">BibTeX</button>
+            <button type="button" id="exRis">RIS</button>
+            <button type="button" id="exCsv">CSV（Excel 用）</button>
+          </div>
+          <div class="row wrap-row">
+            <label class="filebtn"><input type="file" id="imJson" accept="application/json,.json"><span>JSON を読み込む</span></label>
+            <span class="sub">このツールのバックアップ、または edu-research-watch の <code>papers.json</code> など（スコア上位 50 件）</span>
+          </div>
+        </div>
+      </details>
+    </div>
   </section>
 
-  <section class="panel">
-    <details>
-      <summary>設定</summary>
-      <div class="settings">
-        <label>メールアドレス（Unpaywall の利用に必要。OpenAlex・Crossref にも連絡先として渡します）
-          <input id="s_email" type="email" placeholder="you@example.com"></label>
-        <label>OpenAlex API キー（任意）<input id="s_oakey" type="text"></label>
-        <label>CiNii appid（任意。CiNii の結果を画面内に出したいとき）<input id="s_cinii" type="text"></label>
-        <label>PDF 保存先フォルダの URL（Google ドライブ / Dropbox）<input id="s_folder" type="text" placeholder="https://drive.google.com/drive/folders/..."></label>
-        <small>設定もこのブラウザ内にだけ保存されます。</small>
-        <div><button type="button" id="s_save" class="primary">設定を保存</button></div>
+  <section id="about" class="panel about" aria-labelledby="aboutTitle">
+    <details id="aboutDetails">
+      <summary><h2 id="aboutTitle">このページについて・使い方</h2></summary>
+      <div class="about-body">
+        <h3>何をするページか</h3>
+        <p>論文を「探す」「本文を手に入れる」「控える」までを1画面で済ませるための入口です。検索エンジンや保存場所は作らず、Google Scholar・CiNii・国立国会図書館・Unpaywall などの既存サービスを束ねて、次に何をすればよいかを示します。大学や研究機関に所属していない人が、本文にたどり着くまでの手間を減らすことを一番の目的にしています。</p>
+
+        <h3>Google Scholar・CiNii と比べて</h3>
+        <div class="tablewrap"><table class="cmp">
+          <thead><tr><th></th><th>Google Scholar</th><th>CiNii Research</th><th>文献ハブ</th></tr></thead>
+          <tbody>
+            <tr><th>得意なこと</th><td>収録範囲の広さ・全文検索</td><td>日本語の論文・紀要・博士論文</td><td>1回の入力で複数のサービスを同時に引き、入手方法まで示す</td></tr>
+            <tr><th>無料で読める版</th><td>「すべてのバージョン」を自分でたどる</td><td>リポジトリへのリンクがある場合のみ</td><td>出版社版・著者最終稿・プレプリントを区別して一覧にする</td></tr>
+            <tr><th>国会図書館</th><td>×</td><td>一部連携</td><td>NDLサーチの結果を並べ、デジタル化資料に印を付ける。遠隔複写などの手続きへ案内する</td></tr>
+            <tr><th>所属がない場合</th><td>有料ページで止まりやすい</td><td>同左</td><td>著者への依頼文、researchmap・ORCID での連絡先探しまで用意する</td></tr>
+            <tr><th>控える</th><td>マイライブラリ（要ログイン）</td><td>×</td><td>台帳・BibTeX・RIS・Obsidian ノート。ログイン不要</td></tr>
+            <tr><th>関連文献</th><td>被引用の一覧</td><td>△</td><td>参照文献・被引用・関連論文を並べ、それぞれの入手しやすさも示す</td></tr>
+          </tbody>
+        </table></div>
+        <p class="sub">探す力そのものは Google Scholar や CiNii のほうが上です。このページは、それらへ一度に問い合わせ、結果を「どうすれば読めるか」の順に並べ直す役割を担います。</p>
+
+        <h3>使い方</h3>
+        <ol class="steps">
+          <li><b>調べる</b>：上の欄に DOI・論文ページの URL・タイトルのどれかを入れます。タイトルなら候補が出るので、目当ての論文を選びます。</li>
+          <li><b>入手する</b>：画面上部の帯が入手しやすさを示します。①無料版 → ②横断検索 → ③図書館などの手続き → ④著者に頼む、の順に試してください。</li>
+          <li><b>控える</b>：「台帳に追加」で読みたい論文を記録し、状態（未入手・入手済・読了）とメモを付けます。「引用・保存」タブで参考文献の表記や BibTeX、保存用のファイル名、Obsidian ノートをコピーできます。</li>
+          <li><b>広げる</b>：「関連文献」タブで、参照している論文・引用している論文をたどれます。</li>
+        </ol>
+
+        <h3>論文ページから1クリックで開く</h3>
+        <p>次のボタンをブックマークバーへドラッグしてください。論文のページでそれを押すと、ページ内の DOI を拾って文献ハブを開きます。</p>
+        <p><a id="bm" class="bm" href="#">文献ハブで開く</a></p>
+
+        <h3>データの扱い</h3>
+        <ul>
+          <li>台帳と設定は、このブラウザの中（localStorage）にだけ保存されます。サーバーには送りません。</li>
+          <li>メールアドレスは、Unpaywall・OpenAlex・Crossref への問い合わせにだけ添えます。</li>
+          <li>ブラウザのデータを消すと台帳も消えます。「書き出し・読み込み」の JSON で、ときどき Google ドライブなどへバックアップしてください。</li>
+        </ul>
+
+        <h3>できないこと</h3>
+        <ul>
+          <li>Google Scholar には公式の API がないため、画面内には結果を出さず、リンクだけを用意しています。</li>
+          <li>有料の論文を無料にすることはできません。合法に公開されている版と、正規の入手手段だけを案内します。</li>
+        </ul>
       </div>
     </details>
   </section>
-</div>
-<div id="toast" class="toast" hidden></div>
+</main>
 
+<dialog id="settings" aria-labelledby="settingsTitle">
+  <form method="dialog" id="settingsForm" class="settings">
+    <div class="panel-h"><h2 id="settingsTitle">設定</h2><button value="cancel" class="ghost" aria-label="閉じる">閉じる</button></div>
+    <label>メールアドレス <span class="req">推奨</span>
+      <input id="s_email" type="email" placeholder="you@example.com" autocomplete="email">
+      <small>Unpaywall の利用に必要です。OpenAlex・Crossref にも連絡先として渡します。</small></label>
+    <label>依頼文に入れる名前
+      <input id="s_name" type="text" placeholder="山田太郎" autocomplete="name">
+      <small>「著者に頼む」の文面の署名に使います。</small></label>
+    <label>PDF の保存先フォルダの URL
+      <input id="s_folder" type="url" placeholder="https://drive.google.com/drive/folders/...">
+      <small>Google ドライブや Dropbox のフォルダ。詳細画面から1クリックで開けます。</small></label>
+    <details>
+      <summary>詳しい設定</summary>
+      <div class="stack">
+        <label>OpenAlex API キー（任意）<input id="s_oakey" type="text" autocomplete="off"></label>
+        <label>CiNii appid（任意）<input id="s_cinii" type="text" autocomplete="off"><small>CiNii の結果が画面内に出ないときに試してください。</small></label>
+      </div>
+    </details>
+    <p id="settingsErr" class="err" hidden></p>
+    <div class="row">
+      <button type="submit" value="save" class="primary" id="s_save">保存する</button>
+      <span class="sub">設定はこのブラウザの中にだけ保存されます。</span>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" role="status" hidden></div>
 <script src="lib.js"></script>
 <script src="app.js"></script>
 </body>

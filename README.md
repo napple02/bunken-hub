@@ -10,17 +10,30 @@
 - [edu-research-watch](https://github.com/napple02/edu-research-watch) が「何を読むべきか」を見つけ、文献ハブは「それをどう手に入れて控えるか」を担う
 
 ## できること
-1. DOI・論文URL（arXiv を含む）・タイトルを入力する
-2. 書誌情報を取得する（OpenAlex → Crossref → doi.org の順に試す）。OpenAlex に abstract があれば表示する
-3. タイトル検索では OpenAlex・Crossref・CiNii・**NDLサーチ**を並べて検索し、候補を出す（日本語の検索語なら CiNii と NDL を先頭に出す）
-4. 本文の入手ルートを、費用の安い順に示す
-   - ① 無料で読める版（OpenAlex / Unpaywall の OA 情報）
-   - ② 横断検索リンク（Google Scholar, CiNii, J-STAGE, IRDB, NDLサーチ, **NDLデジタルコレクション**, **ジャパンサーチ**, CORE, Semantic Scholar, PubMed, BASE）
-   - ③ 手続きによる入手（出版社での購入、NDL遠隔複写、個人向けデジタル化資料送信サービス、公共図書館）
-   - ④ 著者への別刷り依頼メールの文面（日本語と英語を自動で切り替え）
-5. 参考文献表記・BibTeX・保存用ファイル名（`年_筆頭著者_タイトル.pdf`）をコピーする
-6. **Obsidian ノート**（edu-research-watch の Vault 出力と同じ frontmatter の並び）をコピーするか、`.md` で保存する
-7. 台帳（未入手 / 入手済 / 読了 + メモ）を管理する。JSON / BibTeX / CSV で書き出し、JSON で読み込む
+1. DOI・論文URL（arXiv を含む）・タイトルを入力する。`/` キーで検索欄に移動できる
+2. 書誌情報を取得する（OpenAlex → Crossref → doi.org の順に試す）。abstract があれば表示し、Google 翻訳へ渡せる
+3. タイトル検索では OpenAlex・Crossref・CiNii・NDLサーチを同時に検索し、候補に入手しやすさの色を付ける
+4. **入手しやすさの帯**：無料 PDF あり / 図書館経由 / 有料のみ を一目で示す。**撤回された論文には警告**を出す
+5. 「入手する」タブ：本文の入手ルートを、費用の安い順に並べる
+   - 1 無料で読める版（OpenAlex / Unpaywall。出版社版・著者最終稿・プレプリントを区別する）
+   - 2 横断検索リンク（Google Scholar, CiNii, J-STAGE, IRDB, NDLサーチ, NDLデジタルコレクション, ジャパンサーチ, CORE, Semantic Scholar, PubMed, BASE）
+   - 3 手続きによる入手（出版社、NDL遠隔複写、個人向けデジタル化資料送信サービス、公共図書館）
+   - 4 著者に頼む：**責任著者**を宛先にし、ORCID・researchmap で連絡先を探すリンクと、署名入りの依頼文を出す
+6. 「引用・保存」タブ：参考文献表記 / BibTeX / RIS / Obsidian ノートを切り替えてコピー。保存用ファイル名、このページへのリンク
+7. 「関連文献」タブ：被引用（多い順）・参照文献・関連論文を OpenAlex から並べ、それぞれ入手しやすさの色を付ける。Connected Papers などの図へのリンク
+8. 台帳：状態（未入手 / 入手済 / 読了）・メモ・検索・並べ替え。JSON / BibTeX / RIS / CSV で書き出す。**バックアップを2週間していないと知らせる**
+9. 最近調べた論文、初回のメールアドレス登録の案内、設定ダイアログ、ブックマークレット、ダークモード
+
+## 参考にしたサービス・リポジトリ
+| 参考元 | 取り入れた考え方 |
+|---|---|
+| Unpaywall 拡張 / Open Access Button | 無料版の有無を一目で示す帯。合法な版だけを案内する |
+| LibKey Nomad / Lean Library | 論文ページから1クリックで入手手段へ（ブックマークレット） |
+| Zotero コネクタ | 論文ページの `citation_doi` メタタグから DOI を読む。RIS 書き出し |
+| Connected Papers / ResearchRabbit / Litmaps | 被引用・参照文献からの芋づる式探索（関連文献タブ） |
+| Retraction Watch | 撤回論文の警告（OpenAlex の `is_retracted`） |
+| researchmap / ORCID | 所属のない人が著者に連絡するための導線 |
+| edu-research-watch | OpenAlex の abstract の復元、Obsidian の frontmatter |
 
 ## edu-research-watch との連携
 - **週報・月報から取り込む**：台帳の「DOI をまとめて追加」に、`reports/weekly/*.md` などの Markdown をそのまま貼り付けると、含まれている DOI を拾って未入手として追加する

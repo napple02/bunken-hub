@@ -50,6 +50,12 @@ function fromOpenAlex(w) {
     oa: locs,
     cited: w.cited_by_count,
     abstract: reconstructAbstract(w.abstract_inverted_index),
+    oaid: String(w.id || '').replace(/^https?:\/\/openalex\.org\//i, ''),
+    retracted: !!w.is_retracted,
+    corresponding: (w.authorships || []).findIndex((a) => a.is_corresponding),
+    orcids: (w.authorships || []).map((a) => a.author?.orcid || ''),
+    refIds: (w.referenced_works || []).map((u) => String(u).split('/').pop()),
+    relIds: (w.related_works || []).map((u) => String(u).split('/').pop()),
   };
 }
 function fromCSL(m, src) {
@@ -114,11 +120,14 @@ function fileName(m) {
   const t = clean(m.title).slice(0, hasJa(m.title) ? 24 : 48).replace(/-$/, '');
   return [m.year || 'nd', clean(m.authors[0]?.family) || 'anon', t].filter(Boolean).join('_') + '.pdf';
 }
-function requestMail(m) {
+// 著者への別刷り依頼の文面。責任著者がわかればその人宛てにする
+function requestMail(m, opts = {}) {
+  const to = m.authors[m.corresponding >= 0 ? m.corresponding : 0];
+  const me = opts.name || '';
   if (hasJa(m.title)) {
-    return `件名: 論文別刷り（PDF）送付のお願い\n\n${m.authors[0] ? nameStr(m.authors[0]) + ' 先生' : 'ご担当者様'}\n\n突然のご連絡失礼いたします。（氏名・立場）と申します。\n下記のご論文を拝読したいのですが、所属機関がなく本文を入手できずにおります。\n差し支えなければ、PDF をお送りいただけないでしょうか。\n\n${toCitation(m)}\n\n（読みたい理由を一、二文）\n\nどうぞよろしくお願いいたします。`;
+    return `件名: 論文別刷り（PDF）送付のお願い\n\n${to ? nameStr(to) + ' 先生' : 'ご担当者様'}\n\n突然のご連絡失礼いたします。${me || '（氏名）'}と申します。\n下記のご論文を拝読したいのですが、所属機関がなく本文を入手できずにおります。\n差し支えなければ、PDF をお送りいただけないでしょうか。\n\n${toCitation(m)}\n\n（読みたい理由を一、二文）\n\nどうぞよろしくお願いいたします。\n\n${me || '（氏名）'}`;
   }
-  return `Subject: Request for a copy of your paper\n\nDear Dr. ${m.authors[0]?.family || ''},\n\nI am (name), an independent reader interested in (topic). I do not have institutional access and would be grateful if you could share a PDF of your paper:\n\n${toCitation(m)}\n\n(One or two sentences on why you want to read it.)\n\nThank you very much for your time.\n\nBest regards,\n(name)`;
+  return `Subject: Request for a copy of your paper\n\nDear Dr. ${to?.family || ''},\n\nI am ${me || '(name)'}, an independent reader interested in (topic). I do not have institutional access and would be grateful if you could share a PDF of your paper:\n\n${toCitation(m)}\n\n(One or two sentences on why you want to read it.)\n\nThank you very much for your time.\n\nBest regards,\n${me || '(name)'}`;
 }
 function searchLinks(m) {
   const t = m.title || '';
@@ -234,7 +243,69 @@ function toObsidian(m, opts = {}) {
   return fm.join('\n') + '\n' + body.join('\n');
 }
 
+// RIS（Mendeley・EndNote・Zotero などへ取り込める形式）
+function toRIS(m) {
+  const L = [['TY', 'JOUR'], ['TI', m.title]];
+  for (const a of m.authors) L.push(['AU', a.cjk || !a.given ? nameStr(a) : `${a.family}, ${a.given}`]);
+  const [sp, ep] = String(m.pages || '').split('-');
+  L.push(['PY', m.year], ['JO', m.venue], ['VL', m.volume], ['IS', m.issue], ['SP', sp], ['EP', ep], ['PB', m.publisher], ['DO', m.doi], ['UR', m.doi ? 'https://doi.org/' + m.doi : m.landing], ['AB', m.abstract]);
+  return L.filter(([, v]) => v).map(([k, v]) => `${k}  - ${v}`).join('\n') + '\nER  - ';
+}
+
+// 本文がどの程度手に入りやすいかを一言で判定する（画面上部の帯に使う）
+function availability(m) {
+  const pdf = (m.oa || []).find((l) => l.pdf);
+  if (pdf) return { level: 'free', label: '無料で PDF を読めます', detail: [verJa[pdf.version], pdf.host].filter(Boolean).join(' / ') };
+  if ((m.oa || []).length || m.isOa) return { level: 'free', label: '無料で読める版があります', detail: 'リンク先で本文を確認してください' };
+  if (m.digital) return { level: 'library', label: '国立国会図書館のデジタル化資料です', detail: '個人向け送信サービスやデジタルコレクションで読める可能性があります' };
+  if (hasJa(m.title) || hasJa(m.venue)) return { level: 'library', label: '無料版は見つかっていません', detail: 'J-STAGE・機関リポジトリ・NDL を横断検索で確認してください' };
+  return { level: 'paid', label: '無料版は見つかっていません', detail: '横断検索で別の版を探すか、著者に PDF を頼むのが早道です' };
+}
+
+// 連絡先を探すための著者リンク（researchmap は日本の研究者向け）
+function authorLinks(a, orcid) {
+  const n = nameStr(a);
+  const L = [];
+  if (orcid) L.push(['ORCID', orcid]);
+  L.push(['researchmap', `https://researchmap.jp/researchers?q=${encodeURIComponent(n)}`]);
+  L.push(['Google で連絡先を探す', `https://www.google.com/search?q=${encodeURIComponent('"' + n + '" email OR メール')}`]);
+  return L;
+}
+
+// 引用関係を図で見られる外部サービス
+function graphLinks(m) {
+  if (!m.doi) return [];
+  return [
+    ['Connected Papers', `https://www.connectedpapers.com/api/redirect/doi/${m.doi}`],
+    ['Semantic Scholar', `https://www.semanticscholar.org/search?q=${encodeURIComponent(m.doi)}`],
+    ['OpenAlex', m.oaid ? `https://openalex.org/works/${m.oaid}` : `https://openalex.org/works?filter=doi:${encodeURIComponent(m.doi)}`],
+  ];
+}
+
+const translateUrl = (text) => `https://translate.google.com/?sl=auto&tl=ja&op=translate&text=${encodeURIComponent(String(text || '').slice(0, 4500))}`;
+const isEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || '').trim());
+
+// 論文ページで押すと、ページ内の DOI（なければ URL）を持って文献ハブを開くブックマークレット
+function bookmarklet(base) {
+  const sel = 'meta[name="citation_doi"],meta[name="dc.identifier"],meta[name="DC.identifier"],meta[name="prism.doi"],meta[property="citation_doi"]';
+  return `javascript:(()=>{const m=document.querySelector('${sel}');const t=document.querySelector('meta[name="citation_title"]');const q=(m&&/10\\.\\d{4,9}\\//.test(m.content)?m.content:'')||(document.body.innerText.match(/10\\.\\d{4,9}\\/[^\\s"<>]+/)||[])[0]||(t&&t.content)||location.href;window.open('${base}?q='+encodeURIComponent(q));})()`;
+}
+
+// 台帳の絞り込みと並べ替え
+function filterLedger(list, { status = 'all', text = '', sort = 'added' } = {}) {
+  const t = text.trim().toLowerCase();
+  const out = list.filter((e) => (status === 'all' || e.status === status) &&
+    (!t || [e.meta.title, e.meta.title_ja, e.meta.venue, e.memo, e.meta.doi, ...(e.meta.authors || []).map(nameStr)].join(' ').toLowerCase().includes(t)));
+  const by = {
+    added: (a, b) => String(b.addedAt).localeCompare(String(a.addedAt)),
+    year: (a, b) => (Number(b.meta.year) || 0) - (Number(a.meta.year) || 0),
+    title: (a, b) => String(a.meta.title).localeCompare(String(b.meta.title), 'ja'),
+  }[sort];
+  return by ? out.sort(by) : out;
+}
+
 if (typeof module !== 'undefined') {
   module.exports = { esc, safeUrl, hasJa, parseInput, splitName, nameStr, fromOpenAlex, fromCSL, fromCiNii, fromWatchPaper, fromNdlItem,
-    reconstructAbstract, extractDois, bibKey, toBibTeX, toCitation, fileName, requestMail, searchLinks, toObsidian, verJa };
+    reconstructAbstract, extractDois, bibKey, toBibTeX, toCitation, fileName, requestMail, searchLinks, toObsidian, verJa,
+    toRIS, availability, authorLinks, graphLinks, translateUrl, isEmail, bookmarklet, filterLedger };
 }

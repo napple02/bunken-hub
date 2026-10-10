@@ -79,3 +79,59 @@ test('検索リンクに NDL デジタルコレクションとジャパンサー
   assert.ok(names.includes('NDLデジタルコレクション'));
   assert.ok(names.includes('ジャパンサーチ'));
 });
+
+test('RIS', () => {
+  const r = L.toRIS(en);
+  assert.match(r, /^TY  - JOUR\nTI  - Deep learning\nAU  - LeCun, Yann/);
+  assert.match(r, /SP  - 436\nEP  - 444/);
+  assert.ok(r.endsWith('ER  - '));
+});
+
+test('入手しやすさの判定', () => {
+  assert.equal(L.availability({ ...en, oa: [{ url: 'https://x/a.pdf', pdf: true, version: 'acceptedVersion', host: 'HAL' }] }).level, 'free');
+  assert.equal(L.availability({ ...ja, digital: true }).level, 'library');
+  assert.equal(L.availability(ja).level, 'library');
+  assert.equal(L.availability(en).level, 'paid');
+});
+
+test('依頼文は責任著者宛てにし、署名を入れる', () => {
+  const t = L.requestMail({ ...en, corresponding: 2 }, { name: 'Taro Yamada' });
+  assert.match(t, /Dear Dr\. Hinton,/);
+  assert.match(t, /I am Taro Yamada,/);
+  assert.match(L.requestMail(ja), /山田 太郎 先生/);
+});
+
+test('メールアドレスの形', () => {
+  assert.ok(L.isEmail('a@b.jp'));
+  assert.ok(!L.isEmail('a@b'));
+  assert.ok(!L.isEmail(''));
+});
+
+test('ブックマークレットは文献ハブの URL を含む', () => {
+  const b = L.bookmarklet('https://napple02.github.io/bunken-hub/');
+  assert.ok(b.startsWith('javascript:'));
+  assert.ok(b.includes("'https://napple02.github.io/bunken-hub/?q='"));
+});
+
+test('台帳の絞り込みと並べ替え', () => {
+  const list = [
+    { id: 'a', status: 'want', memo: '', addedAt: '2026-10-01', meta: en },
+    { id: 'b', status: 'read', memo: '授業で使う', addedAt: '2026-10-05', meta: ja },
+  ];
+  assert.deepEqual(L.filterLedger(list).map((e) => e.id), ['b', 'a']);
+  assert.deepEqual(L.filterLedger(list, { status: 'want' }).map((e) => e.id), ['a']);
+  assert.deepEqual(L.filterLedger(list, { text: '授業' }).map((e) => e.id), ['b']);
+  assert.deepEqual(L.filterLedger(list, { text: 'hinton' }).map((e) => e.id), ['a']);
+  assert.deepEqual(L.filterLedger(list, { sort: 'year' }).map((e) => e.id), ['b', 'a']);
+});
+
+test('OpenAlex の work から撤回・責任著者・参照文献を読む', () => {
+  const m = L.fromOpenAlex({ id: 'https://openalex.org/W1', title: 'T', is_retracted: true,
+    authorships: [{ author: { display_name: 'A B' } }, { author: { display_name: 'C D', orcid: 'https://orcid.org/0000' }, is_corresponding: true }],
+    referenced_works: ['https://openalex.org/W2'], related_works: [], locations: [] });
+  assert.equal(m.oaid, 'W1');
+  assert.equal(m.retracted, true);
+  assert.equal(m.corresponding, 1);
+  assert.deepEqual(m.refIds, ['W2']);
+  assert.equal(m.orcids[1], 'https://orcid.org/0000');
+});
