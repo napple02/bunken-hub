@@ -129,3 +129,16 @@ test('はじめの設定: 全部済むか「あとで」を選ぶと出さない
   assert.equal(L.showSetupCard({ email: 'a@b.jp', name: 'x', gistToken: 't', installMarked: true, folder: 'https://x' }), false);
   assert.equal(L.showSetupCard({ email: 'a@b.jp' }), true);
 });
+
+test('GitHub の 403 を、原因ごとの直し方にする', () => {
+  assert.match(L.ghErrorText({ status: 403, token: 'github_pat_x' }), /Account permissions の「Gists」を「Read and write」/);
+  assert.match(L.ghErrorText({ status: 403, token: 'ghp_x', scopes: 'repo, read:user' }), /gist にチェックを入れて作り直し/);
+  assert.match(L.ghErrorText({ status: 403, token: 'ghp_x', remaining: '0' }), /利用制限/);
+  assert.match(L.ghErrorText({ status: 403, token: 'github_pat_x', message: 'API rate limit exceeded' }), /利用制限/, '利用制限はトークンの種類より先に判定する');
+  assert.match(L.ghErrorText({ status: 429 }), /利用制限/);
+  // 見出しが読めない（CORS で隠れる）ときは、本文の message を添えて案内する
+  assert.match(L.ghErrorText({ status: 403, token: 'ghp_x', message: 'Forbidden' }), /Forbidden/);
+  assert.match(L.ghErrorText({ status: 403, token: 'ghp_x', scopes: 'gist, repo' }), /gist の権限があるか/);
+  assert.match(L.ghErrorText({ status: 401 }), /期限が切れて/);
+  assert.equal(L.ghErrorText({ status: 500 }), '');
+});
