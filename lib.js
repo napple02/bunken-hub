@@ -523,8 +523,51 @@ function filterCands(items, { oaOnly = false, jaOnly = false, sort = 'rel' } = {
   return by ? [...out].sort(by) : out;
 }
 
+// ---------- Zotero（Web API v3）----------
+// 文献ハブは本文を保存しない。PDF の保管・注釈・Word などでの引用は Zotero に任せ、書誌を送るだけにする
+const ZOTERO_API = 'https://api.zotero.org';
+const ZOTERO_BATCH = 50;   // 1回の書き込みで送れる件数の上限（Zotero の仕様）
+// 文献ハブの書誌を Zotero の item（journalArticle / book）にする
+function toZoteroItem(m, { tags = [] } = {}) {
+  const book = m.source === 'NDL';
+  const creators = (m.authors || []).map((a) => (a.cjk || !a.given
+    ? { creatorType: 'author', name: nameStr(a) }
+    : { creatorType: 'author', lastName: a.family, firstName: a.given }));
+  const extra = [m.title_ja ? `訳題: ${m.title_ja}` : '', 'bunken-hub から追加'].filter(Boolean).join('\n');
+  const item = { itemType: book ? 'book' : 'journalArticle', title: m.title || '', creators, date: String(m.year || ''), url: m.doi ? `https://doi.org/${m.doi}` : safeUrl(m.landing || ''), extra,
+    tags: [...new Set(['bunken-hub', ...tags])].map((tag) => ({ tag })) };
+  if (book) Object.assign(item, { publisher: m.publisher || '', series: m.venue || '' });
+  else Object.assign(item, { publicationTitle: m.venue || '', volume: m.volume || '', issue: m.issue || '', pages: m.pages || '', DOI: m.doi || '', abstractNote: m.abstract || '' });
+  return item;
+}
+// 親 item に付ける子：無料版へのリンク（ファイルは保存しない＝Zotero の容量を使わない）と、台帳のメモ
+function zoteroChildren(m, parentItem, memo = '') {
+  const out = [];
+  const best = (m.oa || []).find((l) => l.pdf) || (m.oa || [])[0];
+  const url = safeUrl(best?.url || '');
+  if (url) out.push({ itemType: 'attachment', parentItem, linkMode: 'linked_url', title: best.pdf ? '無料版（PDF）' : '無料版', url, ...(best.pdf ? { contentType: 'application/pdf' } : {}) });
+  if (String(memo || '').trim()) out.push({ itemType: 'note', parentItem, note: `<p>${esc(memo).replace(/\n/g, '<br>')}</p>` });
+  return out;
+}
+// 書き込みの応答 {successful, success, unchanged, failed} を、送った順の結果にする
+function parseZoteroWrite(res, count) {
+  return Array.from({ length: count }, (_, i) => {
+    const k = String(i);
+    const key = res?.successful?.[k]?.key || res?.success?.[k] || res?.unchanged?.[k] || '';
+    return key ? { key } : { error: res?.failed?.[k]?.message || '不明なエラー' };
+  });
+}
+// GET /keys/current の応答から、連携に使えるかを判定する（ライブラリの読み書きが必要）
+function zoteroKeyInfo(j) {
+  const u = j?.access?.user || {};
+  if (!j?.userID) return { ok: false, reason: 'キーを確認できませんでした' };
+  if (!u.library || !u.write) return { ok: false, reason: 'このキーには「ライブラリへのアクセス」と「書き込み」の権限が必要です' };
+  return { ok: true, userID: String(j.userID), username: j.username || '' };
+}
+const zoteroItemUrl = (username, key) => (username && key ? `https://www.zotero.org/${encodeURIComponent(username)}/items/${encodeURIComponent(key)}` : '');
+
 if (typeof module !== 'undefined') {
-  module.exports = { esc, safeUrl, hasJa, parseInput, splitName, nameStr, fromOpenAlex, fromCSL, fromCiNii, fromWatchPaper, watchTags, fromNdlItem,
+  module.exports = { esc, safeUrl, hasJa, parseInput, splitName, nameStr, fromOpenAlex, fromCSL, fromCiNii, fromWatchPaper, watchTags, fromNdlItem, ZOTERO_API, ZOTERO_BATCH, toZoteroItem, zoteroChildren, parseZoteroWrite, zoteroKeyInfo, zoteroItemUrl,
     reconstructAbstract, extractDois, bibKey, toBibTeX, toCitation, fileName, requestMail, searchLinks, toObsidian, verJa,
     toRIS, availability, authorLinks, graphLinks, translateUrl, isEmail, bookmarklet, filterLedger,
     SYNC_KEYS, SYNC_FILE, compactMeta, mergeLedgers, mergeSync, buildSyncPayload, buildBackup, parseImport, sharedQuery, setupSteps, showSetupCard, fromEuropePmc, fromSemanticScholar, mergeOa, filterCands, normTag, allTags, toCSL, toMarkdownLink, crc32, makeZip, ledgerNotesZip };

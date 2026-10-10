@@ -34,6 +34,17 @@
 16. **はじめの設定**：メールアドレス・名前・同期・ホーム画面への追加・保存先フォルダを、進み具合つきで案内（登録済みなら折りたたむ）
 17. **セキュリティ**：CSP（`script-src 'self'`）で、外部・埋め込みのスクリプトを実行させない。トークンを端末に保存するため、XSS を入れさせない構えにしている
 
+18. **Zotero と連携（任意）**：「引用・保存」タブの「Zotero に送る」で、書誌・abstract・タグ・メモと無料版へのリンクを、自分の Zotero ライブラリへ送る。台帳の未送信分はまとめて送れる。送る前に DOI で重複を確かめ、送信済みの印は台帳に残る（同期される）。PDF の保管・注釈・Word や Google ドキュメントでの引用は Zotero に任せる
+
+## Zotero と連携するには
+1. [zotero.org](https://www.zotero.org/user/register) でアカウントを作る（無料。ファイルの保存容量は 300MB まで無料）
+2. [API キーの作成画面](https://www.zotero.org/settings/keys/new)で、「Allow library access」と「Allow write access」にチェックしてキーを作る
+3. 文献ハブの「設定」→「Zotero と連携」にキーを入れ、「接続を確かめる」
+4. 論文の「引用・保存」タブで「Zotero に送る」。パソコンには [Zotero のアプリ](https://www.zotero.org/download/)を入れると、送った論文がアプリに同期され、PDF を添付・注釈し、Word で引用できる
+
+- キーはこの端末の中にだけ保存し、同期・バックアップには入れない。別の端末でも使うときは、その端末でキーを入れる
+- PDF のファイルは送らない（無料版へのリンクだけ）。Zotero のアプリの「Find Available PDF」で、Zotero 側でも無料版を探せる
+
 ## 端末間の同期のしくみ
 - 設定の「他の端末と同期」に、GitHub のトークン（**gist の権限だけ**）を入れて「接続して同期」。別の端末では同じトークンを入れるだけで、`bunken-hub-sync.json` という Gist を探して取り込む
 - 文献ごとに `updatedAt` が新しいほうを残し、削除は「墓標」で他の端末へ伝える（2台で同時に編集しても合流する）。マージは `lib.js` の `mergeSync`（単体テストあり）
@@ -50,6 +61,7 @@
 | Retraction Watch | 撤回論文の警告（OpenAlex の `is_retracted`） |
 | researchmap / ORCID | 所属のない人が著者に連絡するための導線 |
 | edu-research-watch | OpenAlex の abstract の復元、Obsidian の frontmatter |
+| Zotero（Web API） | 本文の保管・注釈・引用は自前で作らず Zotero に渡す。Citation.js のような引用形式のライブラリを入れる代わりに、多数の引用形式は Zotero 側で使う |
 
 ## edu-research-watch との連携
 - **週報・月報から取り込む**：台帳の「DOI をまとめて追加」に、`reports/weekly/*.md` などの Markdown をそのまま貼り付けると、含まれている DOI を拾って未入手として追加する
@@ -99,6 +111,7 @@ npm test   # = node --test tests/*.test.js（依存パッケージなし）。�
 | 日本語論文 | CiNii Research | ブラウザから直接呼べない場合はリンクのみ |
 | 国会図書館 | NDLサーチ OpenSearch | 同上。デジタルコレクションの資料には「デジコレ」の印を付ける |
 | 無料版・要約 | Europe PMC, Semantic Scholar | 無料・キー不要。無料版の探索先と TLDR |
+| 文献の保管・引用 | Zotero Web API | 任意。API キーが必要（同期しない） |
 | Google Scholar | — | 公式 API がないため、リンクのみ（スクレイピングはしない） |
 
 ## 未検証・注意

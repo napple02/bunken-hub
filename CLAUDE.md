@@ -20,7 +20,7 @@
 
 ## 守ること
 - **CSP（`script-src 'self'`）を崩さない**：インラインの `<script>`・`on…=` 属性・`eval` は使わない。スクリプトを足すときは別ファイルにする
-- **秘密の値は同期・書き出しに入れない**：GitHub のトークン・OpenAlex の API キー。同期の対象は `lib.js` の `SYNC_KEYS` だけ
+- **秘密の値は同期・書き出しに入れない**：GitHub のトークン・OpenAlex の API キー・Zotero の API キー。同期の対象は `lib.js` の `SYNC_KEYS` だけ
 - 台帳の文献を変更するときは `updatedAt` を更新する。削除は `tombs`（墓標）に記録する（同期のため）
 - 画面に出す文字列は `esc()` で必ずエスケープする
 - Google Scholar をスクレイピングしない。有料の論文を無料にする手段は案内しない

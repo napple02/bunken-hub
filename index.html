@@ -139,6 +139,7 @@
             <button type="button" id="exRis">RIS</button>
             <button type="button" id="exObs" title="全件をノートにして、一覧と一緒に ZIP で書き出す">Obsidian ノート（ZIP）</button>
             <button type="button" id="exCsv">CSV（Excel 用）</button>
+            <button type="button" id="exZotero" title="まだ Zotero に送っていない文献を、まとめて送る">Zotero へ送る（未送信分）</button>
           </div>
           <div class="row wrap-row">
             <label class="filebtn"><input type="file" id="imJson" accept="application/json,.json"><span>JSON を読み込む</span></label>
@@ -250,6 +251,15 @@
           <li>接続を解除しても、GitHub 上の Gist は消えません。消すときは GitHub の Gist のページから削除してください。</li>
         </ul>
       </details>
+    </fieldset>
+    <fieldset class="syncbox" id="zoteroBox">
+      <legend>Zotero と連携 <span class="req">任意</span></legend>
+      <p class="sub">論文の書誌を、あなたの Zotero のライブラリへ送ります。PDF の保管・注釈、Word や Google ドキュメントでの引用は Zotero で行えます。</p>
+      <label>Zotero の API キー
+        <input id="s_zkey" type="password" autocomplete="off" spellcheck="false">
+        <small><a href="https://www.zotero.org/settings/keys/new" target="_blank" rel="noopener">キーを作る</a>（「Allow library access」と「Allow write access」にチェック）。キーはこの端末の中にだけ保存し、同期データには入れません。</small></label>
+      <div class="row"><button type="button" id="zConnect" class="primary">接続を確かめる</button><button type="button" id="zOff" class="ghost" hidden>接続を解除</button></div>
+      <p id="zInfo" class="sub" role="status"></p>
     </fieldset>
     <div class="row"><button type="button" id="setupShow" class="ghost">「はじめの設定」を表示する</button></div>
     <details>
