@@ -390,14 +390,20 @@ function ledgerNotesZip(entries, { folder = '文献ハブ', today } = {}) {
 // ---------- 端末間の引き継ぎ（GitHub Gist 同期・バックアップ）----------
 // GitHub API の失敗を、原因と直し方の文言にする。403 は「権限がない」と「利用制限」の両方で返るので、
 // 応答の見出し（残り回数・トークンのスコープ）・本文・トークンの種類で見分ける
-function ghErrorText({ status, token = '', remaining = null, scopes = null, message = '' } = {}) {
+// step は失敗した要求（例: 'GET /gists'）。GitHub の message と一緒に末尾へ添え、原因を突き止められるようにする
+function ghErrorText({ status, token = '', remaining = null, scopes = null, message = '', step = '' } = {}) {
+  const detail = message || step ? `（GitHub の応答: ${[message, step].filter(Boolean).join(' / ')}）` : '';
+  const base = ghErrorBase({ status, token, remaining, scopes, message });
+  return base && status !== 401 && status !== 404 ? base + detail : base;
+}
+function ghErrorBase({ status, token, remaining, scopes, message }) {
   if (status === 401) return 'トークンが正しくないか、期限が切れています。設定で入れ直してください。';
   if (status === 404) return '同期用の Gist が見つかりませんでした。もう一度「接続して同期」を押してください。';
   if (status !== 403 && status !== 429) return '';
   if (status === 429 || remaining === '0' || /rate limit/i.test(message)) return 'GitHub の利用制限にかかっています。1時間ほど待ってから、もう一度同期してください。';
-  if (/^github_pat_/.test(token)) return 'このトークン（細かい権限のトークン）に Gist の権限がありません。GitHub の Settings → Developer settings → Fine-grained tokens でこのトークンを開き、Account permissions の「Gists」を「Read and write」にして保存してください。トークンを入れ直す必要はありません。';
+  if (/^github_pat_/.test(token)) return 'このトークン（細かい権限のトークン）に Gist の権限がありません。GitHub の Settings → Developer settings → Fine-grained tokens でこのトークンを開き、Account permissions の「Gists」を「Read and write」にして保存してください。トークンを入れ直す必要はありません。権限を付けても続く場合は、従来のトークン（設定の「トークンを作る」から、gist にチェック）に切り替えてください。';
   if (scopes !== null && !String(scopes).split(',').map((x) => x.trim()).includes('gist')) return 'このトークンには gist の権限がありません。設定の「トークンを作る」から、gist にチェックを入れて作り直し、入れ直してください。';
-  return `GitHub に断られました（${message || 'HTTP 403'}）。トークンに gist の権限があるか確かめてください。`;
+  return 'GitHub に断られました。トークンに gist の権限があるか確かめてください。';
 }
 const SYNC_KEYS = ['email', 'name', 'folder', 'fmt', 'cinii'];   // 端末をまたいで共有する設定。トークン・API キー・表示テーマは含めない
 const TOMB_KEEP_DAYS = 365;

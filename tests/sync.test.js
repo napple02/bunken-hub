@@ -138,6 +138,12 @@ test('GitHub の 403 を、原因ごとの直し方にする', () => {
   assert.match(L.ghErrorText({ status: 429 }), /利用制限/);
   // 見出しが読めない（CORS で隠れる）ときは、本文の message を添えて案内する
   assert.match(L.ghErrorText({ status: 403, token: 'ghp_x', message: 'Forbidden' }), /Forbidden/);
+  // GitHub の message と失敗した要求を添える（原因を突き止めるため）
+  const t = L.ghErrorText({ status: 403, token: 'github_pat_x', message: 'Resource not accessible by personal access token', step: 'GET /gists' });
+  assert.match(t, /Read and write/);
+  assert.match(t, /従来のトークン/);
+  assert.match(t, /（GitHub の応答: Resource not accessible by personal access token \/ GET \/gists）$/);
+  assert.ok(!L.ghErrorText({ status: 401, message: 'Bad credentials' }).includes('GitHub の応答'));
   assert.match(L.ghErrorText({ status: 403, token: 'ghp_x', scopes: 'gist, repo' }), /gist の権限があるか/);
   assert.match(L.ghErrorText({ status: 401 }), /期限が切れて/);
   assert.equal(L.ghErrorText({ status: 500 }), '');

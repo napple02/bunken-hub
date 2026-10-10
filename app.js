@@ -700,6 +700,7 @@ async function gh(path, opts = {}) {
   if (!r.ok) {
     // 原因を見分けるため、残り回数・スコープ・本文の message を添える（読めなければ無いものとして扱う）
     const e = new Error('HTTP ' + r.status); e.status = r.status;
+    e.step = `${opts.method || 'GET'} ${path.split('?')[0].replace(/^\/gists\/[^/]+/, '/gists/…')}`;
     e.remaining = r.headers.get('x-ratelimit-remaining'); e.scopes = r.headers.get('x-oauth-scopes');
     try { e.ghMessage = String((await r.json()).message || ''); } catch { e.ghMessage = ''; }
     throw e;
@@ -724,7 +725,7 @@ async function findGist() {
   return '';
 }
 function syncErrorText(e) {
-  const t = ghErrorText({ status: e.status, token: settings.gistToken || '', remaining: e.remaining ?? null, scopes: e.scopes ?? null, message: e.ghMessage || '' });
+  const t = ghErrorText({ status: e.status, token: settings.gistToken || '', remaining: e.remaining ?? null, scopes: e.scopes ?? null, message: e.ghMessage || '', step: e.step || '' });
   if (t) return t;
   if (e instanceof SyntaxError) return '同期データを読み取れませんでした。';
   return 'GitHub に接続できませんでした。通信を確かめてください。';
