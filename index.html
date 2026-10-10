@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>文献ハブ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=Shippori+Mincho:wght@500;700&family=IBM+Plex+Mono:wght@400&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>文献ハブ</h1>
+    <span class="sub">DOI・URL・タイトルから、書誌と本文の入手ルートをまとめて引く</span>
+  </header>
+
+  <section class="search" aria-label="検索">
+    <form id="f" class="search-row">
+      <input id="q" type="text" placeholder="DOI、論文のURL、またはタイトル（日本語可）" autocomplete="off" aria-label="DOI、URL、タイトル">
+      <button class="primary" type="submit">調べる</button>
+    </form>
+    <div class="chips">例:
+      <button type="button" data-ex="10.1038/nature14539">10.1038/nature14539</button>
+      <button type="button" data-ex="https://arxiv.org/abs/1706.03762">arXiv URL</button>
+      <button type="button" data-ex="分子模型 教育">分子模型 教育</button>
+    </div>
+    <div id="status" class="status" role="status"></div>
+  </section>
+
+  <section id="cands" class="panel" hidden aria-label="候補">
+    <h3>候補（クリックで詳細）</h3>
+    <div id="candlist" class="cands"></div>
+  </section>
+
+  <section id="detail" class="panel" hidden aria-label="詳細"></section>
+
+  <section class="panel" aria-label="台帳">
+    <div class="copyrow">
+      <h2>台帳</h2>
+      <span id="lcount" class="sub"></span>
+    </div>
+    <div class="ledger-tools">
+      <div class="tabs" role="tablist" id="ltabs">
+        <button type="button" role="tab" data-st="all" aria-selected="true">すべて</button>
+        <button type="button" role="tab" data-st="want" aria-selected="false">未入手</button>
+        <button type="button" role="tab" data-st="have" aria-selected="false">入手済</button>
+        <button type="button" role="tab" data-st="read" aria-selected="false">読了</button>
+      </div>
+      <span style="flex:1"></span>
+      <button type="button" id="exJson">JSONで書き出し</button>
+      <button type="button" id="exBib">BibTeXで書き出し</button>
+      <button type="button" id="exCsv">CSVで書き出し</button>
+      <label class="sub" style="cursor:pointer"><input type="file" id="imJson" accept="application/json,.json" hidden><span style="text-decoration:underline">JSONを読み込む</span></label>
+    </div>
+    <div class="tablewrap"><table>
+      <thead><tr><th>年</th><th>文献</th><th>状態</th><th>メモ</th><th></th></tr></thead>
+      <tbody id="ltbody"></tbody>
+    </table></div>
+    <details>
+      <summary>DOI をまとめて追加</summary>
+      <div class="settings">
+        <label>DOI を含む文章をそのまま貼り付け（edu-research-watch の週報・月報の Markdown など）
+          <textarea id="bulk" rows="4" placeholder="https://doi.org/10.1007/s10649-026-10563-9 ..."></textarea></label>
+        <div><button type="button" id="bulkAdd" class="primary">未入手として追加</button></div>
+        <small>edu-research-watch の <code>papers.json</code> などは、上の「JSONを読み込む」からそのまま取り込めます（スコア上位 50 件）。</small>
+      </div>
+    </details>
+    <p class="sub" style="margin:0">台帳はこのブラウザの中にだけ保存されます。ときどき「JSONで書き出し」て Google ドライブや Dropbox に置いておくと安心です。</p>
+  </section>
+
+  <section class="panel">
+    <details>
+      <summary>設定</summary>
+      <div class="settings">
+        <label>メールアドレス（Unpaywall の利用に必要。OpenAlex・Crossref にも連絡先として渡します）
+          <input id="s_email" type="email" placeholder="you@example.com"></label>
+        <label>OpenAlex API キー（任意）<input id="s_oakey" type="text"></label>
+        <label>CiNii appid（任意。CiNii の結果を画面内に出したいとき）<input id="s_cinii" type="text"></label>
+        <label>PDF 保存先フォルダの URL（Google ドライブ / Dropbox）<input id="s_folder" type="text" placeholder="https://drive.google.com/drive/folders/..."></label>
+        <small>設定もこのブラウザ内にだけ保存されます。</small>
+        <div><button type="button" id="s_save" class="primary">設定を保存</button></div>
+      </div>
+    </details>
+  </section>
+</div>
+<div id="toast" class="toast" hidden></div>
+
+<script src="lib.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
