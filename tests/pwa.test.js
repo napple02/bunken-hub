@@ -67,3 +67,10 @@ test('CSP: 外部・埋め込みのスクリプトを許さず、インライン
   assert.equal([...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>/g)].length, 0, 'インラインの <script> がある');
   assert.doesNotMatch(html, /\son\w+="/, 'インラインのイベント属性がある');
 });
+
+test('Service Worker: ブラウザの HTTP キャッシュを通さずに最新を取りに行く', () => {
+  // GitHub Pages は max-age=600 で配信する。素の fetch だと更新後も最大10分、古い app.js が使われる
+  const sw = read('sw.js');
+  assert.match(sw, /cache: 'no-cache'/);
+  assert.match(sw, /cache: 'reload'/);
+});
