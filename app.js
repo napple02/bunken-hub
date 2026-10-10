@@ -319,6 +319,10 @@ function citePanel(m) {
       <div class="row"><button type="button" data-copy="fn">コピー</button>${folder ? link(folder, '保存先フォルダを開く', 'btnlink') : '<button type="button" data-open-settings>保存先フォルダを登録</button>'}</div>
     </section>
     <section class="route">
+      <h3>Zotero</h3>
+      ${zoteroRoute(m)}
+    </section>
+    <section class="route">
       <h3>このページへのリンク</h3>
       <pre id="c_share">${esc(share)}</pre>
       <div class="row"><button type="button" data-copy="share">コピー</button>${navigator.share ? '<button type="button" data-share>共有…</button>' : ''}</div>
@@ -380,7 +384,8 @@ $('#detail').addEventListener('click', (ev) => {
   if (t.closest('[data-star]')) { const e = inLedger(current); if (e) { e.star = !e.star; e.updatedAt = nowIso(); saveLedger(); $('#lctl').innerHTML = ledgerControl(current); } return; }
   const ab = t.closest('[data-add]');
   if (ab) { addLedger(current, ab.dataset.add); $('#lctl').innerHTML = ledgerControl(current); return; }
-  if (t.closest('[data-open-settings]')) { openSettings(); return; }
+  if (t.closest('[data-zotero]')) { sendCurrentToZotero(); return; }
+  if (t.closest('[data-open-settings]')) { openSettings(t.closest('[data-open-settings]').dataset.openSettings); return; }
   const rb = t.closest('[data-r]');
   if (rb) openWork(related[+rb.dataset.r]);
 });
@@ -585,6 +590,105 @@ $('#bulkAdd').addEventListener('click', async () => {
   $('#bulk').value = ''; $('#bulkCount').textContent = '';
 });
 
+// ---------- Zotero との連携（Web API v3）----------
+// 書誌を本人の Zotero ライブラリへ送る。キーはこの端末だけに置き、同期・書き出しに入れない（SYNC_KEYS に含めない）。
+// 送った item のキーは台帳の文献（entry.zotero）に残す。台帳は同期されるので、別の端末でも送信済みと分かる。
+const zUser = () => settings.zoteroUser || null;
+async function zoteroFetch(path, opts = {}) {
+  const r = await fetch(ZOTERO_API + path, { ...opts, headers: { 'Zotero-API-Key': settings.zoteroKey, 'Zotero-API-Version': '3', ...(opts.body ? { 'Content-Type': 'application/json' } : {}), ...(opts.headers || {}) } });
+  if (!r.ok) { const err = new Error('HTTP ' + r.status); err.status = r.status; throw err; }
+  return r.status === 204 ? null : r.json();
+}
+const zoteroErrorText = (e) => (e.status === 403 ? 'キーが無効か、書き込みの権限がありません。設定でキーを確かめてください。'
+  : e.status === 429 ? 'Zotero の利用制限にかかりました。しばらく待ってからやり直してください。'
+    : `Zotero に接続できませんでした（${e.message}）。`);
+function renderZoteroInfo(msg) {
+  const u = zUser();
+  $('#zInfo').textContent = msg || (settings.zoteroKey && u ? `接続済み：${u.name || u.id} のライブラリ` : '');
+  $('#zOff').hidden = !settings.zoteroKey;
+}
+function zoteroRoute(m) {
+  if (!settings.zoteroKey || !zUser()) return '<p class="sub">書誌を Zotero に送ると、PDF の保管・注釈や、Word での引用に使えます。</p><div class="row"><button type="button" data-open-settings="zotero">Zotero と連携する</button></div>';
+  const e = inLedger(m);
+  if (e?.zotero) { const url = zoteroItemUrl(zUser().name, e.zotero); return `<p class="sub">送信済みです。</p><div class="row">${url ? link(url, 'Zotero で開く', 'btnlink') : ''}</div>`; }
+  return '<p class="sub">書誌・abstract・タグ・メモと、無料版へのリンクを送ります（PDF のファイルは送りません）。台帳にない論文は、台帳にも追加します。</p><div class="row"><button type="button" class="primary" data-zotero>Zotero に送る</button></div>';
+}
+// DOI で、すでに Zotero にある item を探す（同じ論文を二重に作らない）
+async function zoteroFindByDoi(doi) {
+  if (!doi) return '';
+  const list = await zoteroFetch(`/users/${zUser().id}/items?q=${encodeURIComponent(doi)}&qmode=everything&itemType=-attachment&limit=5`);
+  const hit = (list || []).find((x) => String(x.data?.DOI || '').toLowerCase() === doi || String(x.data?.url || '').toLowerCase().endsWith(doi));
+  return hit?.key || '';
+}
+// 台帳の文献をまとめて送る。親 item を 50 件ずつ書き、続けて子（無料版のリンク・メモ）を書く
+async function sendToZotero(entries, progress = () => {}) {
+  const todo = [];
+  let found = 0;
+  for (const [i, e] of entries.entries()) {
+    progress(`Zotero の重複を確認 ${i + 1}/${entries.length}`);
+    const key = await zoteroFindByDoi(e.meta.doi);
+    if (key) { e.zotero = key; e.updatedAt = nowIso(); found++; } else todo.push(e);
+  }
+  let sent = 0; const failed = [];
+  const rand = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
+  for (let i = 0; i < todo.length; i += ZOTERO_BATCH) {
+    const batch = todo.slice(i, i + ZOTERO_BATCH);
+    progress(`Zotero へ送信 ${Math.min(i + ZOTERO_BATCH, todo.length)}/${todo.length}`);
+    // Write-Token：通信が切れて送り直しても、二重に作られない
+    const res = await zoteroFetch(`/users/${zUser().id}/items`, { method: 'POST', headers: { 'Zotero-Write-Token': rand() }, body: JSON.stringify(batch.map((e) => toZoteroItem(e.meta, { tags: e.tags || [] }))) });
+    const out = parseZoteroWrite(res, batch.length);
+    const children = [];
+    batch.forEach((e, j) => {
+      if (out[j].key) { e.zotero = out[j].key; e.updatedAt = nowIso(); sent++; children.push(...zoteroChildren(e.meta, out[j].key, e.memo)); } else failed.push(`${e.meta.title}: ${out[j].error}`);
+    });
+    for (let k = 0; k < children.length; k += ZOTERO_BATCH) {
+      // 子の失敗は書誌の送信を取り消さない（リンクとメモは Zotero 側で足せる）
+      try { await zoteroFetch(`/users/${zUser().id}/items`, { method: 'POST', body: JSON.stringify(children.slice(k, k + ZOTERO_BATCH)) }); } catch (err) { failed.push(`無料版のリンク・メモ: ${zoteroErrorText(err)}`); }
+    }
+  }
+  saveLedger();
+  return { sent, found, failed };
+}
+async function sendCurrentToZotero() {
+  const m = current;
+  if (!inLedger(m)) addLedger(m, 'want');
+  const e = inLedger(m);
+  try {
+    const r = await sendToZotero([e]);
+    toast(r.sent ? 'Zotero に送りました' : r.found ? 'すでに Zotero にありました（送信済みとして記録しました）' : `送れませんでした：${r.failed.join(' / ')}`);
+  } catch (err) { toast(zoteroErrorText(err)); }
+  if (current === m) $('#p_cite').innerHTML = citePanel(m);
+}
+$('#exZotero').addEventListener('click', async () => {
+  if (!settings.zoteroKey || !zUser()) { openSettings('zotero'); return; }
+  const todo = ledger.filter((e) => !e.zotero);
+  if (!todo.length) { toast('台帳の文献は、すべて Zotero に送信済みです'); return; }
+  const btn = $('#exZotero'); btn.disabled = true;
+  try {
+    const r = await sendToZotero(todo, (s) => setStatus(s, true));
+    setStatus(`Zotero へ ${r.sent} 件を送りました${r.found ? `（${r.found} 件はすでにありました）` : ''}${r.failed.length ? `。送れなかったもの: ${r.failed.join(' / ')}` : ''}`);
+  } catch (err) { setStatus(zoteroErrorText(err)); }
+  btn.disabled = false;
+});
+$('#zConnect').addEventListener('click', async () => {
+  const key = $('#s_zkey').value.trim();
+  if (!key) { renderZoteroInfo('API キーを入れてください。'); return; }
+  settings.zoteroKey = key;
+  renderZoteroInfo('確かめています…');
+  try {
+    const info = zoteroKeyInfo(await zoteroFetch('/keys/current'));
+    if (!info.ok) { delete settings.zoteroUser; saveSettings(); renderZoteroInfo(info.reason); return; }
+    settings.zoteroUser = { id: info.userID, name: info.username };
+    saveSettings(); renderZoteroInfo(); toast('Zotero に接続しました');
+    if (current) $('#p_cite').innerHTML = citePanel(current);
+  } catch (err) { delete settings.zoteroUser; saveSettings(); renderZoteroInfo(zoteroErrorText(err)); }
+});
+$('#zOff').addEventListener('click', () => {
+  delete settings.zoteroKey; delete settings.zoteroUser; saveSettings();
+  $('#s_zkey').value = ''; renderZoteroInfo('接続を解除しました。Zotero 側のキーは、Zotero の設定画面から削除できます。');
+  if (current) $('#p_cite').innerHTML = citePanel(current);
+});
+
 // ---------- 端末間の同期（GitHub のシークレット Gist）----------
 // 台帳と設定を、本人の GitHub アカウントのシークレット Gist（bunken-hub-sync.json）に預ける。
 // 別の端末では同じトークンを入れるだけで、見つけて取り込む。マージは lib.js の mergeSync が行う（新しいほうを採用・削除は墓標で伝える）。
@@ -701,10 +805,13 @@ function openSettings(focus) {
   $('#s_theme').value = settings.theme || '';
   $('#s_token').value = settings.gistToken || '';
   $('#s_auto').checked = settings.autoSync !== false;
+  $('#s_zkey').value = settings.zoteroKey || '';
+  renderZoteroInfo();
   $('#settingsErr').hidden = true;
   renderSyncInfo();
   $('#settings').showModal();
   if (focus === 'sync') $('#s_token').focus();
+  if (focus === 'zotero') $('#s_zkey').focus();
 }
 $('#openSettings').addEventListener('click', () => openSettings());
 // 設定画面の入力を検査して保存する。問題があれば文言を返す（保存しない）
@@ -719,6 +826,9 @@ function saveSettingsForm() {
   const token = $('#s_token').value.trim();
   if (token !== (settings.gistToken || '')) { if (token) settings.gistToken = token; else { delete settings.gistToken; delete settings.gistId; } }
   settings.autoSync = $('#s_auto').checked;
+  // Zotero のキーを書き換えて「保存」した場合は、接続を確かめ直すまで未接続として扱う
+  const zkey = $('#s_zkey').value.trim();
+  if (zkey !== (settings.zoteroKey || '')) { delete settings.zoteroUser; if (zkey) settings.zoteroKey = zkey; else delete settings.zoteroKey; }
   if (JSON.stringify(SYNC_KEYS.map((k) => settings[k] || '')) !== before) settings.settingsUpdatedAt = nowIso();
   saveSettings(); applyTheme(); refreshSetup();
   return '';

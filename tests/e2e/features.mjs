@@ -3,13 +3,21 @@
 import { start } from './harness.mjs';
 const { base: BASE, browser: b, tmp, ok, stop } = await start();
 import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
 const ctx = await b.newContext({ viewport:{width:1100,height:1000}, acceptDownloads: true }); const p = await ctx.newPage();
 const errs=[]; p.on('pageerror',e=>errs.push(e.message)); p.on('console', m=>{ if(m.type()==='error' && !/Failed to load resource|net::ERR/.test(m.text())) errs.push('console: '+m.text()); });
-const calls = new Set();
+const calls = new Set(); const zcalls = []; const zbodies = [];
 const work = (id, title, extra={}) => ({ id:'https://openalex.org/'+id, doi:'https://doi.org/10.1000/'+id.toLowerCase(), title, publication_year:2015, cited_by_count:5,
   authorships:[{author:{display_name:'Yann LeCun'}}], primary_location:{source:{display_name:'Nature'}}, biblio:{}, open_access:{is_oa:false}, locations:[], referenced_works:[], related_works:[], ...extra });
 await ctx.route('**/*', async (r) => { const u = r.request().url();
   if (u.includes('fonts.g')) return r.abort();
+  if (u.startsWith('https://api.zotero.org/')) {
+    const req = r.request(); zcalls.push(`${req.method()} ${new URL(u).pathname}${new URL(u).search.includes('q=') ? '?q' : ''} key=${req.headers()['zotero-api-key']}`);
+    if (u.endsWith('/keys/current')) return r.fulfill({ json: { userID: 42, username: 'me', access: { user: { library: true, write: true } } } });
+    if (req.method() === 'GET') return r.fulfill({ json: [] });
+    const body = JSON.parse(req.postData()); zbodies.push(body);
+    return r.fulfill({ json: { successful: Object.fromEntries(body.map((_, i) => [i, { key: 'ZK' + zbodies.length + i }])), failed: {} } });
+  }
   if (u.startsWith('http://localhost')) return r.continue();
   calls.add(new URL(u).hostname);
   if (u.includes('api.openalex.org/works/doi') && u.includes('w7')) return r.fulfill({json: work('W7','A randomized controlled trial of fraction tutoring',{abstract_inverted_index:{We:[0],recruited:[1],'1,250':[2],students:[3],'with':[4],cognitive:[5],load:[6],'measures.':[7]}})});
@@ -70,6 +78,27 @@ await p.locator('#imJson').setInputFiles({ name: 'weekly_buffer.json', mimeType:
 await p.waitForSelector('#ltbody tr[data-id="10.1000/watch1"]');
 const wrow = await p.textContent('#ltbody tr[data-id="10.1000/watch1"]');
 ok(wrow.includes('#ウォッチ') && wrow.includes('#RCT'), 'ウォッチの週次バッファを読み込み、研究デザインがタグになる');
+// --- Zotero との連携（API は模したデータ）---
+await p.click('#t_cite'); await p.click('#p_cite [data-open-settings=zotero]');
+await p.fill('#s_zkey', 'zkey-secret'); await p.click('#zConnect');
+await p.waitForFunction(() => document.querySelector('#zInfo').textContent.includes('接続済み'));
+ok((await p.textContent('#zInfo')).includes('me のライブラリ'), 'Zotero の API キーで接続を確かめられる');
+await p.click('#settings [value=cancel]');
+await p.click('#p_cite [data-zotero]'); await p.waitForSelector('#p_cite a[href*="zotero.org/me/items/"]');
+const parent = zbodies[0][0];
+ok(parent.itemType === 'journalArticle' && /^10\.1000\//.test(parent.DOI) && parent.tags.some((t) => t.tag === 'bunken-hub'), '書誌を journalArticle として送る');
+ok(zcalls.some((c) => c.startsWith('GET /users/42/items?q')), '送る前に DOI で重複を確かめる');
+ok(zcalls.every((c) => c.endsWith('key=zkey-secret')), 'キーはヘッダーで渡す');
+await p.evaluate(() => document.querySelectorAll('#ledger details').forEach((d) => { d.open = true; }));
+const before = zbodies.length; await p.click('#exZotero');
+await p.waitForFunction(() => /Zotero へ \d+ 件を送りました/.test(document.querySelector('#status').textContent));
+ok(zbodies.length > before && !zbodies.slice(before).flat().some((x) => x.DOI === parent.DOI), '台帳の未送信分だけをまとめて送る');
+const stored = await p.evaluate(() => JSON.stringify(localStorage));
+ok(stored.includes('zkey-secret'), 'キーはこの端末に保存する');
+await p.evaluate(() => document.querySelectorAll('#ledger details').forEach((d) => { d.open = true; }));
+const [bk] = await Promise.all([p.waitForEvent('download'), p.click('#exJson')]);
+const bkText = fs.readFileSync(await bk.path(), 'utf8');
+ok(!bkText.includes('zkey-secret') && bkText.includes('"zotero":'), 'バックアップにキーは入らず、送信済みの印は入る');
 // --- 研究の型と用語（ウォッチの規則）---
 await p.goto(BASE + '/index.html?q=10.1000/w7'); await p.waitForSelector('#detail:not([hidden]) .facts');
 ok((await p.textContent('#detail .facts')).includes('RCT · N=1,250'), '研究の型とサンプル数が出る');
