@@ -1,13 +1,14 @@
 // 文献ハブの Service Worker。画面のファイルを端末に控えて、オフラインでも台帳を開けるようにする。
 // 自分のサイトのファイルは「ネットワーク優先（3秒で見切って控えを使う）」にして、更新が常に最新の組になるようにする。
 // 論文の検索に使う外部 API（OpenAlex・Crossref など）には一切介入しない。フォントだけは控えを使い回す。
-const CACHE = 'bunken-hub-shell-v1';
+const CACHE = 'bunken-hub-shell-v2';
 const FONTS = 'bunken-hub-fonts-v1';
 const SHELL = ['./', 'index.html', 'style.css', 'theme.js', 'lib.js', 'app.js', 'pwa.js', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png'];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // 控えを作るときも HTTP キャッシュを通さない（古いファイルを控えにしないため）
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', (e) => {
   e.waitUntil(
@@ -22,7 +23,11 @@ function networkFirst(req, ms) {
     let done = false;
     const fallback = () => caches.match(req, { ignoreSearch: true }).then((hit) => hit || caches.match('index.html'));
     const timer = setTimeout(() => { if (!done) fallback().then((r) => { if (r && !done) { done = true; resolve(r); } }); }, ms);
-    fetch(req).then((res) => {
+    // ブラウザの HTTP キャッシュを通さずに取りに行く（GitHub Pages は max-age=600 で配信するため、
+    // 素の fetch だと更新後も最大10分、古いファイルが返る）。要求は URL から作り直す
+    // （画面の遷移の要求は、元の要求に設定を足して作り直せないため、すべて同じ作り方にそろえる）
+    const fresh = new Request(req.url, { cache: 'no-cache', credentials: 'same-origin' });
+    fetch(fresh).then((res) => {
       if (done) { if (res.ok) caches.open(CACHE).then((c) => c.put(req, res.clone())); return; }
       done = true; clearTimeout(timer);
       if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req.mode === 'navigate' ? 'index.html' : req, copy)); }
