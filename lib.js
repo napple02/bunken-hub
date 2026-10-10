@@ -397,9 +397,26 @@ function sharedQuery(params) {
   return plain || url || '';
 }
 
+// 「はじめの設定」の進み具合。env.standalone は、すでにアプリとして開いていること
+function setupSteps(settings, env = {}) {
+  const s = settings || {};
+  return [
+    { key: 'email', done: !!s.email },
+    { key: 'name', done: !!s.name },
+    { key: 'sync', done: !!s.gistToken },
+    { key: 'install', done: !!env.standalone || !!s.installMarked },
+    { key: 'folder', done: !!s.folder },
+  ];
+}
+// 設定カードを出すか。全部済んだか、本人が「あとで」を選んだら出さない（旧版の setupLater も同じ扱い）
+function showSetupCard(settings, env = {}) {
+  const steps = setupSteps(settings, env);
+  return steps.some((x) => !x.done) && !settings?.setupHidden && !settings?.setupLater;
+}
+
 if (typeof module !== 'undefined') {
   module.exports = { esc, safeUrl, hasJa, parseInput, splitName, nameStr, fromOpenAlex, fromCSL, fromCiNii, fromWatchPaper, fromNdlItem,
     reconstructAbstract, extractDois, bibKey, toBibTeX, toCitation, fileName, requestMail, searchLinks, toObsidian, verJa,
     toRIS, availability, authorLinks, graphLinks, translateUrl, isEmail, bookmarklet, filterLedger,
-    SYNC_KEYS, SYNC_FILE, compactMeta, mergeLedgers, mergeSync, buildSyncPayload, buildBackup, parseImport, sharedQuery };
+    SYNC_KEYS, SYNC_FILE, compactMeta, mergeLedgers, mergeSync, buildSyncPayload, buildBackup, parseImport, sharedQuery, setupSteps, showSetupCard };
 }

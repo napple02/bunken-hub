@@ -109,11 +109,22 @@ h3 { font-size: 13px; letter-spacing: .06em; margin: 0; font-weight: 700; }
 .note { background: var(--warn-bg); color: var(--ink); border-radius: 6px; padding: 8px 12px; font-size: 13px; }
 .note button { font-size: 12px; padding: 2px 8px; margin-left: 4px; }
 
-/* 初回案内 */
+/* はじめの設定 */
 .setup { background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 10px; padding: 16px 18px; display: grid; gap: 10px; }
-.setup p { margin: 4px 0 0; font-size: 14px; max-width: 70ch; }
-.setup-form { display: flex; flex-wrap: wrap; gap: 8px; }
-.setup-form input { flex: 1 1 240px; }
+.setup-h { display: flex; align-items: center; gap: 10px; }
+.setup-h h2 { flex: 1; }
+.setup > p { margin: 0; }
+.setup-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.step { display: flex; gap: 12px; align-items: flex-start; background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; }
+.step.done { background: transparent; border-color: transparent; padding-block: 4px; align-items: center; }
+.step.done b { color: var(--muted); font-weight: 400; }
+.mark { flex: none; display: inline-grid; place-items: center; width: 1.7em; height: 1.7em; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 700; border: 1px solid var(--accent); }
+.step.done .mark { background: var(--oa); border-color: var(--oa); color: var(--card); }
+.step-b { display: grid; gap: 4px; min-width: 0; flex: 1; font-size: 14px; }
+.step-b .sub { overflow-wrap: anywhere; }
+.step-form { display: flex; flex-wrap: wrap; gap: 8px; }
+.step-form input { flex: 1 1 220px; width: auto; }
+.step-b .err { font-size: 13px; }
 
 /* 入力例・最近 */
 .hint { display: grid; gap: 8px; }

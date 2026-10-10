@@ -45,17 +45,13 @@
   <div id="offline" class="topnote" role="status" hidden>オフラインです。画面と台帳は使えますが、論文の検索や同期はつながってからになります。</div>
   <div id="update" class="topnote" role="status" hidden>新しい版に更新されました。 <button type="button" id="reload">再読み込み</button></div>
   <section id="setup" class="setup" hidden aria-labelledby="setupTitle">
-    <div>
-      <h2 id="setupTitle">はじめに：メールアドレスを登録してください</h2>
-      <p>無料で読める版を探す Unpaywall は、連絡先のメールアドレスがないと使えません。アドレスはこのブラウザの中にだけ保存し、Unpaywall・OpenAlex・Crossref への問い合わせにだけ使います。</p>
-    </div>
-    <form id="setupForm" class="setup-form">
-      <label for="setupEmail" class="sr">メールアドレス</label>
-      <input id="setupEmail" type="email" placeholder="you@example.com" autocomplete="email" required>
-      <button class="primary" type="submit">登録する</button>
+    <div class="setup-h">
+      <h2 id="setupTitle">はじめの設定</h2>
+      <span id="setupProg" class="pill" aria-label="完了した設定の数"></span>
       <button type="button" id="setupLater" class="ghost">あとで</button>
-    </form>
-    <p id="setupErr" class="err" hidden></p>
+    </div>
+    <p class="sub">使い始める前に、おすすめの設定を順に済ませておくと便利です。どれも、あとから「設定」で変えられます。</p>
+    <ol id="setupList" class="setup-list"></ol>
   </section>
 
   <section class="hint" id="intro" aria-label="入力例">
@@ -221,7 +217,7 @@
       </select>
       <small>この端末だけの設定です。</small></label>
     <fieldset class="syncbox" id="syncBox">
-      <legend>他の端末と同期</legend>
+      <legend>他の端末と同期 <span class="req">おすすめ</span></legend>
       <p class="sub">台帳と設定を、あなたの GitHub アカウントの「シークレット Gist」に預けて、別の端末へ引き継ぎます。別の端末では、同じトークンを入れるだけです。</p>
       <label>GitHub のトークン（gist の権限だけ）
         <input id="s_token" type="password" autocomplete="off" spellcheck="false" placeholder="ghp_...">
@@ -239,6 +235,7 @@
         </ul>
       </details>
     </fieldset>
+    <div class="row"><button type="button" id="setupShow" class="ghost">「はじめの設定」を表示する</button></div>
     <details>
       <summary>詳しい設定</summary>
       <div class="stack">

@@ -9,6 +9,9 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } },
 };
+// アプリとして開いているか／ホーム画面への追加を受け付けられるか（後者は pwa.js が beforeinstallprompt で入れる）
+const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+let installEvent = null;
 const SKEY = 'bunkenhub.settings.v1';
 let settings = store.get(SKEY, {});
 const saveSettings = () => store.set(SKEY, settings);
@@ -233,7 +236,7 @@ function getPanel(m, doiUrl) {
   const oaItems = (m.oa || []).map((l) => `<li>${link(l.url, l.host || (l.url.split('/')[2] || l.url))}
     <span class="tag oa">${l.pdf ? 'PDF' : 'ページ'}</span>${verJa[l.version] ? `<span class="sub">${verJa[l.version]}</span>` : ''}${l.license ? ` <span class="sub">${esc(l.license)}</span>` : ''}</li>`).join('');
   // 上部の初回案内を閉じた人にだけ、ここで登録を促す
-  const emailAsk = settings.email || !settings.setupLater ? '' : `<form class="inline-form" data-email-form>
+  const emailAsk = settings.email || !(settings.setupHidden || settings.setupLater) ? '' : `<form class="inline-form" data-email-form>
       <label>メールアドレスを登録すると、Unpaywall でも無料版を探します
         <span class="row"><input type="email" placeholder="you@example.com" autocomplete="email" required><button type="submit" class="primary">登録して調べ直す</button></span></label></form>`;
   const to = m.authors[m.corresponding >= 0 ? m.corresponding : 0];
@@ -675,15 +678,62 @@ $('#settingsForm').addEventListener('submit', (ev) => {
   if (settings.gistToken) { if (settings.gistId) scheduleSync(); else syncNow({ quiet: true }); }
   if (current) showDetail(current);
 });
-function refreshSetup() { $('#setup').hidden = !!settings.email || !!settings.setupLater; }
-$('#setupForm').addEventListener('submit', (ev) => {
+// ---------- はじめの設定（おすすめの設定を順に案内する）----------
+// 済んだものは一行で示し、未了のものだけ入力欄や操作を出す。値はこれまでの設定と同じ場所に保存する（メール・名前・保存先は同期の対象）。
+const SETUP_TEXT = {
+  email: { title: 'メールアドレスを登録', tag: '推奨', why: '無料で読める版を探す Unpaywall に必要です。アドレスは、Unpaywall・OpenAlex・Crossref への問い合わせにだけ添えます。', field: { type: 'email', ph: 'you@example.com', auto: 'email', btn: '登録' } },
+  name: { title: '名前を登録', tag: '任意', why: '著者に PDF を頼む依頼文の署名に入ります。', field: { type: 'text', ph: '山田太郎', auto: 'name', btn: '登録' } },
+  sync: { title: '別の端末と同期', tag: 'おすすめ', why: '台帳と設定を GitHub のシークレット Gist に預けて、スマホとパソコンで引き継ぎます。バックアップも兼ねます。' },
+  install: { title: 'ホーム画面に追加', tag: 'おすすめ', why: 'アドレスバーのない全画面で開け、オフラインでも台帳を見られます。' },
+  folder: { title: 'PDF の保存先フォルダを登録', tag: '任意', why: 'Google ドライブや Dropbox のフォルダの URL。論文の詳細から1クリックで開けます。', field: { type: 'url', ph: 'https://drive.google.com/drive/folders/...', auto: 'off', btn: '登録' } },
+};
+const setupEnv = () => ({ standalone });
+function refreshSetup() {
+  const steps = setupSteps(settings, setupEnv());
+  const card = $('#setup');
+  card.hidden = !showSetupCard(settings, setupEnv());
+  if (card.hidden) return;
+  // 入力途中の文字を、再描画（同期の取り込みなど）で消さない
+  const typed = Object.fromEntries($$('#setupList input').map((i) => [i.name, i.value]));
+  const focused = document.activeElement?.closest?.('#setupList') ? document.activeElement.name : '';
+  $('#setupProg').textContent = `${steps.filter((x) => x.done).length} / ${steps.length}`;
+  $('#setupList').innerHTML = steps.map(({ key, done }) => {
+    const t = SETUP_TEXT[key];
+    const value = key === 'email' ? settings.email : key === 'name' ? settings.name : key === 'folder' ? settings.folder : '';
+    if (done) return `<li class="step done"><span class="mark" aria-hidden="true">✓</span><span class="step-b"><b>${esc(t.title)}</b><span class="sub">${esc(value ? value.replace(/^https?:\/\//, '').slice(0, 40) : '完了')}</span></span></li>`;
+    let body;
+    if (t.field) body = `<form data-step="${key}" class="step-form" novalidate><label class="sr" for="st_${key}">${esc(t.title)}</label><input id="st_${key}" name="${key}" type="${t.field.type}" placeholder="${esc(t.field.ph)}" autocomplete="${t.field.auto}"><button type="submit" class="primary">${t.field.btn}</button></form><p class="err" hidden></p>`;
+    else if (key === 'sync') body = '<div class="row"><button type="button" class="primary" data-act="sync">設定を開く</button><span class="sub">GitHub のトークンを入れます</span></div>';
+    else body = installEvent
+      ? '<div class="row"><button type="button" class="primary" data-act="install">ホーム画面に追加</button></div>'
+      : '<div class="row"><span class="sub">ブラウザのメニュー（iPhone は共有ボタン）から「ホーム画面に追加」を選んでください。</span><button type="button" data-act="mark">追加した</button></div>';
+    return `<li class="step"><span class="mark" aria-hidden="true">${steps.findIndex((x) => x.key === key) + 1}</span><span class="step-b"><b>${esc(t.title)} <span class="req">${t.tag}</span></b><span class="sub">${esc(t.why)}</span>${body}</span></li>`;
+  }).join('');
+  for (const [name, v] of Object.entries(typed)) { const el = $(`#setupList input[name="${name}"]`); if (el) el.value = v; }
+  if (focused) $(`#setupList input[name="${focused}"]`)?.focus();
+}
+$('#setupList').addEventListener('submit', (ev) => {
+  const f = ev.target.closest('[data-step]'); if (!f) return;
   ev.preventDefault();
-  const v = $('#setupEmail').value.trim();
-  if (!isEmail(v)) { $('#setupErr').textContent = 'メールアドレスの形をご確認ください。'; $('#setupErr').hidden = false; return; }
-  settings.email = v; markSettingsChanged(); refreshSetup(); toast('登録しました');
-  if (current?.doi) lookupDoi(current.doi, current);
+  const key = f.dataset.step; const v = $('input', f).value.trim();
+  const err = !v ? '入力してください。' : key === 'email' && !isEmail(v) ? 'メールアドレスの形をご確認ください。'
+    : key === 'folder' && !safeUrl(v) ? 'https:// から始まる URL を入れてください。' : '';
+  const p = f.nextElementSibling;
+  if (err) { p.textContent = err; p.hidden = false; return; }
+  settings[key] = v; markSettingsChanged(); refreshSetup(); toast('登録しました');
+  if (key === 'email' && current?.doi) lookupDoi(current.doi, current);
 });
-$('#setupLater').addEventListener('click', () => { settings.setupLater = true; saveSettings(); refreshSetup(); toast('あとで「設定」から登録できます'); });
+$('#setupList').addEventListener('click', async (ev) => {
+  const b = ev.target.closest('[data-act]'); if (!b) return;
+  if (b.dataset.act === 'sync') openSettings('sync');
+  if (b.dataset.act === 'mark') { settings.installMarked = true; saveSettings(); refreshSetup(); }
+  if (b.dataset.act === 'install' && installEvent) {
+    installEvent.prompt(); await installEvent.userChoice.catch(() => {});
+    installEvent = null; $('#installBtn').hidden = true; refreshSetup();
+  }
+});
+$('#setupLater').addEventListener('click', () => { settings.setupHidden = true; saveSettings(); refreshSetup(); toast('「設定」の中から、いつでも表示できます'); });
+$('#setupShow').addEventListener('click', () => { delete settings.setupHidden; delete settings.setupLater; saveSettings(); $('#settings').close(); refreshSetup(); $('#setup').scrollIntoView({ block: 'start' }); });
 
 // ---------- 使い方・ブックマークレット ----------
 $('#bm').href = bookmarklet(location.origin + location.pathname);

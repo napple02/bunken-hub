@@ -11,15 +11,14 @@ if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
 $('#reload').addEventListener('click', () => location.reload());
 
 // ---------- ホーム画面へ追加 ----------
-let installEvent = null;
-const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-addEventListener('beforeinstallprompt', (ev) => { ev.preventDefault(); installEvent = ev; if (!standalone) $('#installBtn').hidden = false; });
-addEventListener('appinstalled', () => { installEvent = null; $('#installBtn').hidden = true; toast('ホーム画面に追加しました'); });
+// installEvent と standalone は app.js にある
+addEventListener('beforeinstallprompt', (ev) => { ev.preventDefault(); installEvent = ev; if (!standalone) $('#installBtn').hidden = false; refreshSetup(); });
+addEventListener('appinstalled', () => { installEvent = null; settings.installMarked = true; saveSettings(); $('#installBtn').hidden = true; refreshSetup(); toast('ホーム画面に追加しました'); });
 $('#installBtn').addEventListener('click', async () => {
   if (!installEvent) return;
   installEvent.prompt();
   await installEvent.userChoice.catch(() => {});
-  installEvent = null; $('#installBtn').hidden = true;
+  installEvent = null; $('#installBtn').hidden = true; refreshSetup();
 });
 document.documentElement.classList.toggle('standalone', standalone);
 

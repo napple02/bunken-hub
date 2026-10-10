@@ -108,3 +108,20 @@ test('同期: 並び順や軽量化の違いだけでは変更とみなさない
   assert.equal(r.push, false);
   assert.equal(r.pull, false);
 });
+
+test('はじめの設定: 進み具合は設定値とアプリ表示から決まる', () => {
+  const none = L.setupSteps({}, {});
+  assert.deepEqual(none.map((x) => x.key), ['email', 'name', 'sync', 'install', 'folder']);
+  assert.ok(none.every((x) => !x.done));
+  const some = L.setupSteps({ email: 'a@b.jp', gistToken: 't' }, { standalone: true });
+  assert.deepEqual(some.filter((x) => x.done).map((x) => x.key), ['email', 'sync', 'install']);
+  assert.ok(L.setupSteps({ installMarked: true }).find((x) => x.key === 'install').done);
+});
+
+test('はじめの設定: 全部済むか「あとで」を選ぶと出さない', () => {
+  assert.equal(L.showSetupCard({}), true);
+  assert.equal(L.showSetupCard({ setupHidden: true }), false);
+  assert.equal(L.showSetupCard({ setupLater: true }), false);
+  assert.equal(L.showSetupCard({ email: 'a@b.jp', name: 'x', gistToken: 't', installMarked: true, folder: 'https://x' }), false);
+  assert.equal(L.showSetupCard({ email: 'a@b.jp' }), true);
+});
