@@ -172,6 +172,9 @@ label.inline { display: flex; gap: 6px; align-items: center; font-size: 13px; co
 .banner.paid { background: var(--warn-bg); border-color: var(--warn); } .banner.paid b { color: var(--warn); }
 .banner.bad { background: var(--bad-bg); border-color: var(--bad); } .banner.bad b { color: var(--bad); }
 .tldr { margin: 0; font-size: 14px; max-width: 75ch; }
+.facts { margin: 0; font-size: 14px; }
+.gloss { margin: 0 0 8px; font-size: 13px; line-height: 1.9; }
+.gloss .gl { display: inline-block; margin-right: 10px; white-space: nowrap; }
 .abs { font-size: 14px; color: var(--muted); }
 .abs p { margin: 8px 0 0; max-width: 75ch; }
 .dtabs { display: flex; gap: 2px; border-bottom: 1px solid var(--rule); overflow-x: auto; }

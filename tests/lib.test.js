@@ -195,3 +195,34 @@ test('ウォッチの無料版・撤回・研究デザインを引き継ぐ', ()
   assert.equal(old.retracted, false);
   assert.deepEqual(L.watchTags({}), ['ウォッチ']);
 });
+
+test('ウォッチの規則で研究デザインとサンプル数を判定する', () => {
+  assert.ok(Object.keys(L.WATCH_RULES.glossary).length > 0, 'WATCH_RULES が取り込まれている');
+  const rct = L.studyFacts({ title: 'A cluster randomized trial of tutoring', abstract: 'We recruited 1,250 students. N = 980.' });
+  assert.deepEqual(rct.design, ['rct']);
+  assert.equal(rct.n, 1250);
+  // レビュー論文は、本文が言及する RCT を自分の型にしない（ウォッチの design_for と同じ）
+  assert.deepEqual(L.studyFacts({ title: 'Tutoring: A systematic review', abstract: 'Included randomized controlled trials enrolled 4,835 participants.' }).design, ['meta_review']);
+  assert.deepEqual(L.studyFacts({ title: 'Exercise in adolescents: A Review', abstract: 'Several randomized controlled trials.' }).design, []);
+  assert.deepEqual(L.studyFacts({ title: 'Effects of tutoring', type: 'review', abstract: 'A randomized trial.' }).design, []);
+  assert.deepEqual(L.studyFacts({ title: '分数の授業実践' }), { design: [], labels: [], n: null });
+});
+
+test('用語辞書：長い語を優先し、語の途中には一致しない', () => {
+  const hits = L.glossaryHits('Physical education and mathematics education; refraction is not a fraction. Fractions!');
+  assert.deepEqual(hits.map(([en]) => en), ['mathematics education', 'physical education', 'fractions']);
+  assert.deepEqual(L.glossaryHits(''), []);
+});
+
+test('Obsidian ノートに訳題・研究の型・サンプル数を入れる', () => {
+  const note = L.toObsidian({ title: 'A randomized controlled trial', title_ja: '無作為化比較試験', abstract: 'N = 1,200 pupils.', authors: [], year: '2026', venue: 'J' }, { today: '2026-10-10' });
+  assert.match(note, /^title_ja: "無作為化比較試験"$/m);
+  assert.match(note, /^design: \["RCT"\]$/m);
+  assert.match(note, /^sample_size: 1200$/m);
+});
+
+test('sync-watch-rules.mjs で取り込んだ区間の形が保たれている', () => {
+  const src = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'lib.js'), 'utf8');
+  assert.match(src, /\/\/ <watch-rules>[^\n]*\nconst WATCH_RULES = \{.*\};\n\/\/ <\/watch-rules>/);
+  assert.equal(L.WATCH_RULES.schema_version, 1);
+});

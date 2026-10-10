@@ -207,6 +207,18 @@ function ledgerControl(m) {
   return `<button type="button" class="star" data-star aria-pressed="${!!e.star}" title="重要（★）">${e.star ? '★' : '☆'}</button><label class="inline">台帳: <select data-setst aria-label="台帳の状態">${Object.entries(stJa).map(([k, v]) => `<option value="${k}"${k === e.status ? ' selected' : ''}>${v}</option>`).join('')}</select></label>`;
 }
 
+// 研究デザインとサンプル数（edu-research-watch と同じ規則での一次判定）
+function factsLine(m) {
+  const f = studyFacts(m);
+  const parts = [...f.labels, f.n != null ? `N=${f.n.toLocaleString('ja-JP')}` : ''].filter(Boolean);
+  return parts.length ? `<p class="facts"><span class="tag src">研究の型</span> ${esc(parts.join(' · '))} <span class="sub">（題名と abstract からの自動判定。本文で確認してください）</span></p>` : '';
+}
+// abstract に出てくる専門用語の訳（ウォッチの用語辞書）。機械翻訳の誤訳を見分ける手がかり
+function glossLine(text) {
+  const hits = glossaryHits(text);
+  return hits.length ? `<p class="gloss"><span class="sub">用語:</span> ${hits.map(([en, ja]) => `<span class="gl">${esc(en)}＝${esc(ja)}</span>`).join(' ')}</p>` : '';
+}
+
 function showDetail(m) {
   current = m;
   rememberRecent(m);
@@ -228,8 +240,9 @@ function showDetail(m) {
     </header>
     ${m.retracted ? '<div class="banner bad"><b>この論文は撤回されています。</b><span>引用・参照する前に、撤回の理由を出版社のページで確認してください。</span></div>' : ''}
     <div class="banner ${av.level}"><b>${esc(av.label)}</b><span>${esc(av.detail)}</span></div>
+    ${factsLine(m)}
     ${m.tldr ? `<p class="tldr"><span class="tag src">TLDR</span> ${esc(m.tldr)} <span class="sub">（Semantic Scholar による一行要約）</span> ${link(translateUrl(m.tldr), '翻訳')}</p>` : ''}
-    ${m.abstract ? `<details class="abs"><summary>Abstract</summary><p>${esc(m.abstract)}</p><p>${link(translateUrl(m.abstract), '日本語に翻訳する（Google 翻訳）')}</p></details>` : ''}
+    ${m.abstract ? `<details class="abs"><summary>Abstract</summary><p>${esc(m.abstract)}</p>${glossLine(`${m.title} ${m.abstract}`)}<p>${link(translateUrl(m.abstract), '日本語に翻訳する（Google 翻訳）')}</p></details>` : ''}
     <div class="dtabs" role="tablist" aria-label="詳細の切り替え">
       ${TABS.map(([k, v]) => `<button type="button" role="tab" id="t_${k}" aria-controls="p_${k}" aria-selected="${k === tab}" data-tab="${k}">${v}</button>`).join('')}
     </div>

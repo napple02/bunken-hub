@@ -20,6 +20,7 @@ await ctx.route('**/*', async (r) => { const u = r.request().url();
   }
   if (u.startsWith('http://localhost')) return r.continue();
   calls.add(new URL(u).hostname);
+  if (u.includes('api.openalex.org/works/doi') && u.includes('w7')) return r.fulfill({json: work('W7','A randomized controlled trial of fraction tutoring',{abstract_inverted_index:{We:[0],recruited:[1],'1,250':[2],students:[3],'with':[4],cognitive:[5],load:[6],'measures.':[7]}})});
   if (u.includes('api.openalex.org/works/doi')) return r.fulfill({json: work('W1','Deep learning')});
   if (u.includes('api.openalex.org/works?search')) return r.fulfill({json:{results:[
     work('W1','Deep learning',{publication_year:2015,cited_by_count:50000,open_access:{is_oa:true}}),
@@ -98,6 +99,11 @@ await p.evaluate(() => document.querySelectorAll('#ledger details').forEach((d) 
 const [bk] = await Promise.all([p.waitForEvent('download'), p.click('#exJson')]);
 const bkText = fs.readFileSync(await bk.path(), 'utf8');
 ok(!bkText.includes('zkey-secret') && bkText.includes('"zotero":'), 'バックアップにキーは入らず、送信済みの印は入る');
+// --- 研究の型と用語（ウォッチの規則）---
+await p.goto(BASE + '/index.html?q=10.1000/w7'); await p.waitForSelector('#detail:not([hidden]) .facts');
+ok((await p.textContent('#detail .facts')).includes('RCT · N=1,250'), '研究の型とサンプル数が出る');
+await p.click('#detail .abs summary');
+ok((await p.textContent('#detail .gloss')).includes('cognitive load＝認知負荷'), 'abstract の用語の訳が出る');
 console.log('通信先:', [...calls].sort().join(', '));
 console.log('errors', errs);
 await stop();
