@@ -53,8 +53,9 @@
 
 ## edu-research-watch との連携
 - **週報・月報から取り込む**：台帳の「DOI をまとめて追加」に、`reports/weekly/*.md` などの Markdown をそのまま貼り付けると、含まれている DOI を拾って未入手として追加する
-- **JSON をそのまま読み込む**：`papers.json` / `rising_papers.json` などを「JSONを読み込む」で選ぶと、`score` 上位 50 件を取り込む。訳題（`title_ja`）も引き継ぐ
-- **リンクで開く**：`index.html?q=<DOI>` で開くと、その DOI をすぐに調べる。ウォッチ側のレポートに「入手ルート」リンクを出す用途を想定している
+- **JSON をそのまま読み込む**：`papers.json` / `rising_papers.json` / `data/weekly_buffer.json` などを「JSONを読み込む」で選ぶと、`score` 上位 50 件を取り込む。訳題（`title_ja`）・無料版（`oa_status`・`oa_url`）・撤回の印も引き継ぎ、`#ウォッチ` と研究デザイン（`#RCT`・`#メタ分析` など）のタグを付ける
+- **リンクで開く**：`index.html?q=<DOI>` で開くと、その DOI をすぐに調べる。ウォッチの週報・月報の「入手」欄に、このリンク（「文献ハブで入手ルートを見る」）と無料版の有無が出る。無料版の区分は、こちらの「入手しやすさの帯」と同じ言葉に揃えている
+- 週報の Markdown を貼ったとき、入手ルートのリンクの DOI（括弧が `%28` などにエンコードされている）も正しく読む
 - 参考にした実装：OpenAlex の abstract の復元、API キーの渡し方、Obsidian の frontmatter
 
 ## 構成
@@ -109,4 +110,4 @@ npm test   # = node --test tests/*.test.js（依存パッケージなし）。�
 ## 今後
 - [ ] 実機での API 動作確認と、CiNii・NDL の調整
 - [ ] Google ドライブ / Dropbox への直接保存（Dropbox Saver、Google Drive API）
-- [ ] edu-research-watch のレポートに `?q=<DOI>` のリンクを出す（ウォッチ側の変更）
+- [x] edu-research-watch のレポートに `?q=<DOI>` のリンクを出す（ウォッチ側の変更。ウォッチのリポジトリの PR で対応）

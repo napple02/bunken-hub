@@ -162,14 +162,20 @@ function reconstructAbstract(inv) {
 function extractDois(text) {
   const out = [];
   for (const m of String(text || '').matchAll(/10\.\d{4,9}\/[^\s"<>)\]]+/g)) {
-    const d = m[0].replace(/[.,;:]+$/, '').toLowerCase();
+    // ウォッチの「文献ハブで入手ルートを見る」リンク（?q=10.1016/s0140-6736%2820%29…）は括弧がエンコードされている
+    let d = m[0];
+    try { d = decodeURIComponent(d); } catch { /* % が壊れていればそのまま */ }
+    d = d.replace(/[.,;:]+$/, '').toLowerCase();
     if (!out.includes(d)) out.push(d);
   }
   return out;
 }
 
-// edu-research-watch の Paper（papers.json / rising_papers.json などの要素）を取り込む
+// edu-research-watch の Paper（papers.json / rising_papers.json / weekly_buffer.json などの要素）を取り込む。
+// oa_status・oa_url（OpenAlex の open_access）と is_retracted は、ウォッチが 2026-10 から書き出す
 function fromWatchPaper(p) {
+  const oaUrl = safeUrl(p.oa_url || '');
+  const free = !!p.oa_status && p.oa_status !== 'closed';
   return {
     source: 'edu-research-watch',
     doi: String(p.doi || '').replace(/^https?:\/\/doi\.org\//i, '').toLowerCase(),
@@ -182,8 +188,16 @@ function fromWatchPaper(p) {
     landing: p.url || '',
     abstract: p.abstract || '',
     cited: p.cited_by_count,
-    isOa: false, oa: [],
+    isOa: free,
+    oa: free && oaUrl ? [{ url: oaUrl, pdf: /\.pdf([?#]|$)/i.test(oaUrl), version: '', host: '', license: '' }] : [],
+    retracted: !!p.is_retracted,
   };
+}
+
+// ウォッチの判定（研究デザイン）を、台帳のタグにする。取り込んだ文献を絞り込めるように
+const WATCH_DESIGN_TAGS = { rct: 'RCT', meta_review: 'メタ分析', quasi_natural: '準実験', longitudinal: '縦断研究' };
+function watchTags(p) {
+  return ['ウォッチ', ...(p.design || []).map((d) => WATCH_DESIGN_TAGS[d]).filter(Boolean)];
 }
 
 // NDLサーチ OpenSearch（RSS）の1件。XML の読み取りは app.js 側で行い、ここでは値だけ受け取る
@@ -441,6 +455,8 @@ function buildBackup(settings, entries, now = new Date()) {
 }
 // 読み込んだ JSON を {kind, entries, settings} に整える。kind: 'backup' | 'watch'
 function parseImport(data) {
+  // ウォッチの週次バッファ（data/weekly_buffer.json）は {schema_version, items: [...]}
+  if (data && !Array.isArray(data) && Array.isArray(data.items) && 'schema_version' in data) data = data.items;
   if (Array.isArray(data)) {
     if (data[0] && !data[0].meta && 'journal' in data[0] && 'title' in data[0]) return { kind: 'watch', papers: data };
     return { kind: 'backup', entries: data.filter((e) => e && e.id && e.meta), settings: {} };
@@ -508,7 +524,7 @@ function filterCands(items, { oaOnly = false, jaOnly = false, sort = 'rel' } = {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { esc, safeUrl, hasJa, parseInput, splitName, nameStr, fromOpenAlex, fromCSL, fromCiNii, fromWatchPaper, fromNdlItem,
+  module.exports = { esc, safeUrl, hasJa, parseInput, splitName, nameStr, fromOpenAlex, fromCSL, fromCiNii, fromWatchPaper, watchTags, fromNdlItem,
     reconstructAbstract, extractDois, bibKey, toBibTeX, toCitation, fileName, requestMail, searchLinks, toObsidian, verJa,
     toRIS, availability, authorLinks, graphLinks, translateUrl, isEmail, bookmarklet, filterLedger,
     SYNC_KEYS, SYNC_FILE, compactMeta, mergeLedgers, mergeSync, buildSyncPayload, buildBackup, parseImport, sharedQuery, setupSteps, showSetupCard, fromEuropePmc, fromSemanticScholar, mergeOa, filterCands, normTag, allTags, toCSL, toMarkdownLink, crc32, makeZip, ledgerNotesZip };
