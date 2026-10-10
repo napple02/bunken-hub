@@ -541,7 +541,7 @@ $('#imJson').addEventListener('change', async (ev) => {
       // edu-research-watch の出力。papers.json は数千件あるのでスコア上位だけを未入手として入れる
       const top = [...imp.papers].sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, WATCH_IMPORT_MAX);
       let n = 0;
-      for (const p of top) { const m = fromWatchPaper(p); if (m.title && !ledger.some((x) => x.id === lid(m))) { rememberEntry(newEntry(m, 'want')); n++; } }
+      for (const p of top) { const m = fromWatchPaper(p); if (m.title && !ledger.some((x) => x.id === lid(m))) { rememberEntry({ ...newEntry(m, 'want'), tags: watchTags(p) }); n++; } }
       saveLedger(); toast(`ウォッチから ${n} 件を追加しました${imp.papers.length > WATCH_IMPORT_MAX ? `（スコア上位 ${WATCH_IMPORT_MAX} 件まで）` : ''}`);
     } else {
       // バックアップ。同じ文献は更新が新しいほうを残し、設定は手元で未入力のものだけ補う

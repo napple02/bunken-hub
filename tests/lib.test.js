@@ -172,3 +172,26 @@ test('候補の絞り込みと並べ替え', () => {
   assert.deepEqual(L.filterCands([a, b, c], { sort: 'cited' }), [c, a, b]);
   assert.deepEqual([a, b, c].map((x) => x.title), ['A study', '分子模型の授業', 'Ndl book']);   // 元の配列は並べ替えない
 });
+
+test('ウォッチの「文献ハブ」リンクの DOI はデコードして拾う', () => {
+  const md = '- 入手: [文献ハブで入手ルートを見る](https://napple02.github.io/bunken-hub/?q=10.1016/s0140-6736%2820%2930183-5)';
+  assert.deepEqual(L.extractDois(md), ['10.1016/s0140-6736(20)30183-5']);
+  assert.deepEqual(L.extractDois('10.1000/bad%zz'), ['10.1000/bad%zz']);
+});
+
+test('ウォッチの無料版・撤回・研究デザインを引き継ぐ', () => {
+  const p = { title: 'T', journal: 'J', doi: '10.1/x', oa_status: 'green', oa_url: 'https://repo.example/x.pdf', is_retracted: true, design: ['rct', 'unknown', 'meta_review'] };
+  const m = L.fromWatchPaper(p);
+  assert.equal(m.isOa, true);
+  assert.deepEqual(m.oa, [{ url: 'https://repo.example/x.pdf', pdf: true, version: '', host: '', license: '' }]);
+  assert.equal(m.retracted, true);
+  assert.equal(L.availability(m).label, '無料で PDF を読めます');
+  assert.deepEqual(L.watchTags(p), ['ウォッチ', 'RCT', 'メタ分析']);
+  // closed・未知の URL スキーム・旧い出力（oa_status なし）は無料版として扱わない
+  assert.equal(L.fromWatchPaper({ ...p, oa_status: 'closed' }).isOa, false);
+  assert.deepEqual(L.fromWatchPaper({ ...p, oa_url: 'javascript:alert(1)' }).oa, []);
+  const old = L.fromWatchPaper({ title: 'T', journal: 'J' });
+  assert.equal(old.isOa, false);
+  assert.equal(old.retracted, false);
+  assert.deepEqual(L.watchTags({}), ['ウォッチ']);
+});

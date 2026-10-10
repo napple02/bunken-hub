@@ -63,6 +63,12 @@ const py = execFileSync('python3', ['-c', 'import zipfile,sys;z=zipfile.ZipFile(
 ok(py.startsWith('None') && py.includes('00_文献一覧.md') && py.includes('tags: ["文献", "bunken-hub", "授業"]') && py.includes('star: true'), 'Obsidian ノートの ZIP を書き出せる（タグと★つき）');
 // 同期データにタグが入る（再読み込みしても残る）
 await p.reload(); ok((await p.locator('#ltbody .tchip').count())===1, 'タグは再読み込み後も残る');
+// --- edu-research-watch の週次バッファ（{schema_version, items}）を読み込む ---
+await p.locator('#imJson').setInputFiles({ name: 'weekly_buffer.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ schema_version: 1, items: [
+  { title: 'Fraction tutoring trial', journal: 'Learning and Instruction', published: '2026-09-29', doi: '10.1000/watch1', design: ['rct'], oa_status: 'gold', oa_url: 'https://pub.example/w1', score: 9 }] })) });
+await p.waitForSelector('#ltbody tr[data-id="10.1000/watch1"]');
+const wrow = await p.textContent('#ltbody tr[data-id="10.1000/watch1"]');
+ok(wrow.includes('#ウォッチ') && wrow.includes('#RCT'), 'ウォッチの週次バッファを読み込み、研究デザインがタグになる');
 console.log('通信先:', [...calls].sort().join(', '));
 console.log('errors', errs);
 await stop();

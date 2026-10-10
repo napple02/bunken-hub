@@ -86,6 +86,10 @@ test('バックアップの読み込み: 旧形式の配列・新形式・ウォ
   assert.deepEqual(b.settings, { email: 'a@b.jp' });
   assert.equal(b.entries.length, 1);
   assert.equal(L.parseImport([{ title: 'T', journal: 'J', score: 3 }]).kind, 'watch');
+  // ウォッチの週次バッファ（{schema_version, items}）もウォッチの出力として読む
+  const buf = L.parseImport({ schema_version: 1, items: [{ title: 'T', journal: 'J', score: 3 }] });
+  assert.equal(buf.kind, 'watch');
+  assert.equal(buf.papers.length, 1);
   assert.equal(L.parseImport({ foo: 1 }), null);
   assert.equal(L.parseImport('x'), null);
 });
