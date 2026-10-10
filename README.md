@@ -28,6 +28,12 @@
 11. **別の端末へ引き継ぎ**：GitHub のシークレット Gist を使った同期（台帳・設定・削除も伝わる）と、設定入りの JSON バックアップ
 12. 表示（ライト / ダーク / 端末に合わせる）、指で押しやすい大きさ、日本語の文節折り返し
 
+13. **無料版の探索先を増強**：OpenAlex・Unpaywall に加え、Europe PMC と Semantic Scholar も同時に引く。Semantic Scholar の一行要約（TLDR）も表示。abstract がなければ Europe PMC のものを使う
+14. **台帳の整理**：★（重要）・タグ（絞り込み・入力候補つき）・全文検索。全件を Obsidian ノートの ZIP（一覧つき）で書き出し。CSL JSON・Markdown リンクの引用形式。共有ボタン（Web Share）
+15. **候補の絞り込み**：「無料版ありのみ」「日本語のみ」、新しい順・被引用の多い順
+16. **はじめの設定**：メールアドレス・名前・同期・ホーム画面への追加・保存先フォルダを、進み具合つきで案内（登録済みなら折りたたむ）
+17. **セキュリティ**：CSP（`script-src 'self'`）で、外部・埋め込みのスクリプトを実行させない。トークンを端末に保存するため、XSS を入れさせない構えにしている
+
 ## 端末間の同期のしくみ
 - 設定の「他の端末と同期」に、GitHub のトークン（**gist の権限だけ**）を入れて「接続して同期」。別の端末では同じトークンを入れるだけで、`bunken-hub-sync.json` という Gist を探して取り込む
 - 文献ごとに `updatedAt` が新しいほうを残し、削除は「墓標」で他の端末へ伝える（2台で同時に編集しても合流する）。マージは `lib.js` の `mergeSync`（単体テストあり）
@@ -53,10 +59,11 @@
 
 ## 構成
 ```
-index.html            画面
+index.html            画面（CSP を meta で指定）
 style.css             見た目（ライト/ダーク対応）
 lib.js                DOM に依存しない処理（書誌の正規化・整形・入力解釈・同期のマージ）
 app.js                API 呼び出し・描画・台帳・同期
+theme.js              保存した表示テーマを、描画前に適用（CSP のためインラインにしない）
 pwa.js                Service Worker の登録、ホーム画面へ追加、オフライン表示、貼り付け
 sw.js                 Service Worker（オフライン用の控え）
 manifest.webmanifest  アプリの定義（アイコン・共有の受け取り・ショートカット）
@@ -70,6 +77,7 @@ tests/                単体テストと構成のテスト
 3. OpenAlex の API キーを持っていれば、それも入れる
 
 ## テスト
+（GitHub Actions でも、push と PR のたびに自動で実行します）
 ```bash
 npm test   # = node --test tests/*.test.js（依存パッケージなし）。同期のマージ・共有の解釈・PWA の構成を確かめる
 ```
@@ -82,6 +90,7 @@ npm test   # = node --test tests/*.test.js（依存パッケージなし）。�
 | OA版の検出 | Unpaywall | 無料。メールアドレスが必要 |
 | 日本語論文 | CiNii Research | ブラウザから直接呼べない場合はリンクのみ |
 | 国会図書館 | NDLサーチ OpenSearch | 同上。デジタルコレクションの資料には「デジコレ」の印を付ける |
+| 無料版・要約 | Europe PMC, Semantic Scholar | 無料・キー不要。無料版の探索先と TLDR |
 | Google Scholar | — | 公式 API がないため、リンクのみ（スクレイピングはしない） |
 
 ## 未検証・注意

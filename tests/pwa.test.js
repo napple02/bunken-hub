@@ -34,7 +34,9 @@ test('Service Worker: 控えるファイルがすべて存在する', () => {
   const sw = read('sw.js');
   const shell = JSON.parse(sw.match(/const SHELL = (\[[\s\S]*?\]);/)[1].replace(/'/g, '"'));
   for (const f of shell) { const p = f === './' ? 'index.html' : f; assert.ok(fs.existsSync(path.join(root, p)), f); }
-  for (const f of ['index.html', 'style.css', 'lib.js', 'app.js']) assert.ok(shell.includes(f), f + ' を控えに含める');
+  // index.html が読み込む自分のファイルは、すべてオフライン用の控えに含める
+  const html = read('index.html');
+  for (const m of html.matchAll(/(?:href|src)="((?:icons\/)?[\w.-]+\.(?:js|css|webmanifest|png|svg))"/g)) assert.ok(shell.includes(m[1]), m[1] + ' を控えに含める');
 });
 
 test('index.html: manifest・アイコン・スクリプトの参照先が存在し、読み込み順が正しい', () => {
@@ -54,4 +56,14 @@ test('index.html: JS から参照する id がすべて存在し、重複しな�
   for (const f of ['app.js', 'pwa.js']) {
     for (const m of read(f).matchAll(/\$\('#([\w-]+)'\)/g)) assert.ok(ids.includes(m[1]) || made.includes(m[1]) || made.some((p) => p.endsWith('_') && m[1].startsWith(p)), `${f} が参照する #${m[1]} がない`);
   }
+});
+
+test('CSP: 外部・埋め込みのスクリプトを許さず、インラインのスクリプトも残っていない', () => {
+  const html = read('index.html');
+  const csp = html.match(/Content-Security-Policy" content="([^"]+)"/)[1];
+  assert.match(csp, /script-src 'self'(;|$)/);
+  assert.doesNotMatch(csp, /unsafe-inline|unsafe-eval/);
+  assert.match(csp, /object-src 'none'/);
+  assert.equal([...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>/g)].length, 0, 'インラインの <script> がある');
+  assert.doesNotMatch(html, /\son\w+="/, 'インラインのイベント属性がある');
 });

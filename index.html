@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>文献ハブ</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https:; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="description" content="DOI・URL・タイトルから、論文の書誌と本文の入手ルートをまとめて引く個人用ハブ">
 <meta name="theme-color" content="#f2f5f4" media="(prefers-color-scheme: light)" data-scheme="light">
 <meta name="theme-color" content="#131a1c" media="(prefers-color-scheme: dark)" data-scheme="dark">
@@ -15,7 +16,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="文献ハブ">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<script>try { const t = JSON.parse(localStorage.getItem('bunkenhub.settings.v1') || '{}').theme; if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}</script>
+<script src="theme.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=Shippori+Mincho:wght@500;700&family=IBM+Plex+Mono:wght@400&display=swap">
 <link rel="stylesheet" href="style.css">
@@ -45,13 +46,17 @@
   <div id="offline" class="topnote" role="status" hidden>オフラインです。画面と台帳は使えますが、論文の検索や同期はつながってからになります。</div>
   <div id="update" class="topnote" role="status" hidden>新しい版に更新されました。 <button type="button" id="reload">再読み込み</button></div>
   <section id="setup" class="setup" hidden aria-labelledby="setupTitle">
-    <div class="setup-h">
-      <h2 id="setupTitle">はじめの設定</h2>
-      <span id="setupProg" class="pill" aria-label="完了した設定の数"></span>
-      <button type="button" id="setupLater" class="ghost">あとで</button>
-    </div>
-    <p class="sub">使い始める前に、おすすめの設定を順に済ませておくと便利です。どれも、あとから「設定」で変えられます。</p>
-    <ol id="setupList" class="setup-list"></ol>
+    <details id="setupDetails" open>
+      <summary class="setup-h">
+        <h2 id="setupTitle">はじめの設定</h2>
+        <span id="setupProg" class="pill" aria-label="完了した設定の数"></span>
+      </summary>
+      <div class="setup-body">
+        <p class="sub">使い始める前に、おすすめの設定を順に済ませておくと便利です。どれも、あとから「設定」で変えられます。</p>
+        <ol id="setupList" class="setup-list"></ol>
+        <div class="row"><button type="button" id="setupLater" class="ghost">あとで（この案内を閉じる）</button></div>
+      </div>
+    </details>
   </section>
 
   <section class="hint" id="intro" aria-label="入力例">
@@ -73,6 +78,12 @@
 
   <section id="cands" class="panel" hidden aria-labelledby="candsTitle">
     <div class="panel-h"><h2 id="candsTitle">候補</h2><span class="sub" id="candsNote"></span></div>
+    <div class="cand-tools">
+      <button type="button" id="fOa" aria-pressed="false">無料版ありのみ</button>
+      <button type="button" id="fJa" aria-pressed="false">日本語のみ</button>
+      <label for="cSort" class="sr">並べ替え</label>
+      <select id="cSort"><option value="rel">検索の順</option><option value="year">新しい順</option><option value="cited">被引用の多い順</option></select>
+    </div>
     <div id="candlist" class="cands"></div>
   </section>
 
@@ -92,6 +103,9 @@
         <button type="button" role="tab" data-st="read" aria-selected="false">読了 <span class="n"></span></button>
       </div>
       <div class="ledger-find">
+        <button type="button" id="lstar" class="starfilter" aria-pressed="false" title="★付きだけを表示">★のみ</button>
+        <label for="ltag" class="sr">タグで絞り込む</label>
+        <select id="ltag" hidden></select>
         <label for="lfind" class="sr">台帳内を検索</label>
         <input id="lfind" type="search" placeholder="タイトル・著者・メモで絞り込む">
         <label for="lsort" class="sr">並べ替え</label>
@@ -102,6 +116,7 @@
         </select>
       </div>
     </div>
+    <datalist id="taglist"></datalist>
     <div class="tablewrap"><table>
       <thead><tr><th>年</th><th>文献</th><th>状態</th><th>メモ</th><th><span class="sr">操作</span></th></tr></thead>
       <tbody id="ltbody"></tbody>
@@ -122,6 +137,7 @@
             <button type="button" id="exJson">JSON（バックアップ）</button>
             <button type="button" id="exBib">BibTeX</button>
             <button type="button" id="exRis">RIS</button>
+            <button type="button" id="exObs" title="全件をノートにして、一覧と一緒に ZIP で書き出す">Obsidian ノート（ZIP）</button>
             <button type="button" id="exCsv">CSV（Excel 用）</button>
           </div>
           <div class="row wrap-row">
@@ -145,7 +161,7 @@
           <thead><tr><th></th><th>Google Scholar</th><th>CiNii Research</th><th>文献ハブ</th></tr></thead>
           <tbody>
             <tr><th>得意なこと</th><td>収録範囲の広さ・全文検索</td><td>日本語の論文・紀要・博士論文</td><td>1回の入力で複数のサービスを同時に引き、入手方法まで示す</td></tr>
-            <tr><th>無料で読める版</th><td>「すべてのバージョン」を自分でたどる</td><td>リポジトリへのリンクがある場合のみ</td><td>出版社版・著者最終稿・プレプリントを区別して一覧にする</td></tr>
+            <tr><th>無料で読める版</th><td>「すべてのバージョン」を自分でたどる</td><td>リポジトリへのリンクがある場合のみ</td><td>OpenAlex・Unpaywall・Europe PMC・Semantic Scholar を同時に引き、出版社版・著者最終稿・プレプリントを区別して一覧にする</td></tr>
             <tr><th>国会図書館</th><td>×</td><td>一部連携</td><td>NDLサーチの結果を並べ、デジタル化資料に印を付ける。遠隔複写などの手続きへ案内する</td></tr>
             <tr><th>所属がない場合</th><td>有料ページで止まりやすい</td><td>同左</td><td>著者への依頼文、researchmap・ORCID での連絡先探しまで用意する</td></tr>
             <tr><th>控える</th><td>マイライブラリ（要ログイン）</td><td>×</td><td>台帳・BibTeX・RIS・Obsidian ノート。ログイン不要</td></tr>
@@ -158,8 +174,8 @@
         <ol class="steps">
           <li><b>調べる</b>：上の欄に DOI・論文ページの URL・タイトルのどれかを入れます。タイトルなら候補が出るので、目当ての論文を選びます。</li>
           <li><b>入手する</b>：画面上部の帯が入手しやすさを示します。①無料版 → ②横断検索 → ③図書館などの手続き → ④著者に頼む、の順に試してください。</li>
-          <li><b>控える</b>：「台帳に追加」で読みたい論文を記録し、状態（未入手・入手済・読了）とメモを付けます。「引用・保存」タブで参考文献の表記や BibTeX、保存用のファイル名、Obsidian ノートをコピーできます。</li>
-          <li><b>広げる</b>：「関連文献」タブで、参照している論文・引用している論文をたどれます。</li>
+          <li><b>控える</b>：「台帳に追加」で読みたい論文を記録し、状態（未入手・入手済・読了）・★（重要）・タグ・メモを付けます。台帳は、タグや★で絞り込めます。「引用・保存」タブでは、参考文献の表記・BibTeX・RIS・CSL JSON・Markdown・Obsidian ノートをコピーできます。台帳の全件は、「書き出し・読み込み」から Obsidian ノートの ZIP にして取り出せます。</li>
+          <li><b>広げる</b>：「関連文献」タブで、参照している論文・引用している論文をたどれます。タイトルで検索したときは、「無料版ありのみ」「日本語のみ」で絞り込み、新しい順や被引用の多い順に並べ替えられます。</li>
         </ol>
 
         <h3>論文ページから1クリックで開く</h3>
