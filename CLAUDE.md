@@ -12,6 +12,7 @@
 ## 構成
 - `lib.js`：DOM に依存しない処理（書誌の正規化・整形・同期のマージなど）。ブラウザと node のテストで共用する。新しい処理はまずここに書き、テストを付ける
 - `app.js`：API 呼び出し・描画・台帳・同期。`pwa.js`：Service Worker の登録・ホーム画面への追加など。`theme.js`：描画前のテーマ適用
+- `lib.js` の `// <watch-rules>` 区間：edu-research-watch の判定規則と用語辞書の写し。手で編集せず、`node scripts/sync-watch-rules.mjs <edu-research-watch>/data/shared_rules.json` で取り込み直す
 - `sw.js`：オフライン用の控え。`index.html` が読み込むファイルを増やしたら、`SHELL` の一覧にも足す（テストが漏れを検出する）
 
 ## コマンド
