@@ -83,11 +83,11 @@ CLAUDE.md             今後の作業のための決まり事
 
 ## テスト
 （GitHub Actions でも、push と PR のたびに自動で実行します）
-
-ブラウザでの通しの確認は `npm run e2e`（Playwright と Chromium が必要。外部 API と GitHub の Gist は模したデータで、2端末の同期・オフライン・共有・★とタグ・ZIP・はじめの設定・CSP を確かめます）。
 ```bash
 npm test   # = node --test tests/*.test.js（依存パッケージなし）。同期のマージ・共有の解釈・PWA の構成を確かめる
 ```
+
+ブラウザでの通しの確認は `npm run e2e`（Playwright と Chromium が必要。外部 API と GitHub の Gist は模したデータで、2端末の同期・オフライン・共有・★とタグ・ZIP・はじめの設定・CSP を確かめます）。
 
 ## 使っている外部サービス
 | 用途 | サービス | 備考 |
