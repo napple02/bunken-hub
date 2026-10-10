@@ -9,6 +9,9 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } },
 };
+// アプリとして開いているか／ホーム画面への追加を受け付けられるか（後者は pwa.js が beforeinstallprompt で入れる）
+const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+let installEvent = null;
 const SKEY = 'bunkenhub.settings.v1';
 let settings = store.get(SKEY, {});
 const saveSettings = () => store.set(SKEY, settings);
@@ -72,18 +75,20 @@ async function byDoi(doi) {
   }
   if (!meta) return null;
   meta.doi = meta.doi || doi;
-  if (settings.email) {
-    try {
-      const u = await getJSON(`https://api.unpaywall.org/v2/${enc}?email=${encodeURIComponent(settings.email)}`);
-      if (u.is_oa) meta.isOa = true;
-      for (const l of u.oa_locations || []) {
-        meta.oa.push({ url: l.url_for_pdf || l.url || l.url_for_landing_page, pdf: !!l.url_for_pdf, version: l.version, host: l.repository_institution || l.host_type || '', license: l.license || '' });
-      }
-    } catch {}
-  }
-  const seen = new Set();
-  meta.oa = meta.oa.filter((l) => l.url && !seen.has(l.url) && seen.add(l.url));
-  if (meta.oa.length) meta.isOa = true;
+  // 無料版の探索先を同時に引く。どれかが落ちても、ほかの結果は使う
+  const [up, epmc, s2] = await Promise.allSettled([
+    settings.email ? getJSON(`https://api.unpaywall.org/v2/${enc}?email=${encodeURIComponent(settings.email)}`, {}, 9000) : Promise.reject(),
+    getJSON(`https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=${encodeURIComponent(`DOI:"${doi}"`)}&format=json&resultType=core&pageSize=1`, {}, 9000),
+    getJSON(`https://api.semanticscholar.org/graph/v1/paper/DOI:${enc}?fields=openAccessPdf,tldr,abstract`, {}, 9000),
+  ]);
+  const unp = up.status === 'fulfilled' ? (up.value.oa_locations || []).map((l) => ({
+    url: l.url_for_pdf || l.url || l.url_for_landing_page, pdf: !!l.url_for_pdf, version: l.version, host: l.repository_institution || l.host_type || '', license: l.license || '' })) : [];
+  const pmc = epmc.status === 'fulfilled' ? fromEuropePmc(epmc.value.resultList?.result?.[0]) : { oa: [], abstract: '' };
+  const sem = s2.status === 'fulfilled' ? fromSemanticScholar(s2.value) : { oa: [], tldr: '', abstract: '' };
+  meta.oa = mergeOa(meta.oa, unp, pmc.oa, sem.oa);
+  meta.abstract = meta.abstract || pmc.abstract || sem.abstract;
+  meta.tldr = sem.tldr;
+  if (meta.oa.length || (up.status === 'fulfilled' && up.value.is_oa)) meta.isOa = true;
   return meta;
 }
 async function ndlSearch(q) {
@@ -151,7 +156,7 @@ const persistLedger = () => store.set(LKEY, ledger) && store.set(TKEY, tombs);
 const newEntry = (m, status) => ({ id: lid(m), status, memo: '', addedAt: today(), updatedAt: nowIso(), meta: compactMeta(m) });
 const rememberEntry = (e) => { tombs = tombs.filter((t) => t.id !== e.id); ledger.unshift(e); };
 let recent = store.get(RKEY, []);
-const lview = { status: 'all', text: '', sort: 'added' };
+const lview = { status: 'all', text: '', sort: 'added', tag: '', star: false };
 const stJa = { want: '未入手', have: '入手済', read: '読了' };
 const lid = (m) => m.doi || (m.title || '').toLowerCase().replace(/\s+/g, '').slice(0, 80);
 const inLedger = (m) => ledger.find((e) => e.id === lid(m));
@@ -169,16 +174,24 @@ function candHTML(m, i, attr = 'data-i') {
     </span>
   </button>`;
 }
-function renderCands(items, note = '') {
-  lastCands = items;
-  $('#candsNote').textContent = note;
-  $('#candlist').innerHTML = items.map((m, i) => candHTML(m, i)).join('') ||
-    '<div class="empty">見つかりませんでした。言い回しを変えるか、DOI で調べてください。</div>';
+const candView = { oaOnly: false, jaOnly: false, sort: 'rel' };
+let candNote = '';
+function renderCands(items, note = candNote) {
+  candNote = note; lastCands = items;
+  const shown = filterCands(items, candView);
+  shownCands = shown;
+  $('#candsNote').textContent = shown.length === items.length ? note : `${shown.length} / ${items.length} 件を表示`;
+  $('#candlist').innerHTML = shown.map((m, i) => candHTML(m, i)).join('') ||
+    `<div class="empty">${items.length ? '条件に合う候補がありません。絞り込みを外してください。' : '見つかりませんでした。言い回しを変えるか、DOI で調べてください。'}</div>`;
   $('#cands').hidden = false;
 }
+let shownCands = [];
+$('#fOa').addEventListener('click', (ev) => { candView.oaOnly = !candView.oaOnly; ev.currentTarget.setAttribute('aria-pressed', String(candView.oaOnly)); renderCands(lastCands); });
+$('#fJa').addEventListener('click', (ev) => { candView.jaOnly = !candView.jaOnly; ev.currentTarget.setAttribute('aria-pressed', String(candView.jaOnly)); renderCands(lastCands); });
+$('#cSort').addEventListener('change', (ev) => { candView.sort = ev.target.value; renderCands(lastCands); });
 $('#candlist').addEventListener('click', (ev) => {
   const b = ev.target.closest('.cand'); if (!b) return;
-  openWork(lastCands[+b.dataset.i]);
+  openWork(shownCands[+b.dataset.i]);
 });
 async function openWork(m) {
   if (m.doi) await lookupDoi(m.doi, m); else showDetail(m);
@@ -191,7 +204,7 @@ let tab = 'get';
 function ledgerControl(m) {
   const e = inLedger(m);
   if (!e) return `<button type="button" class="primary" data-add="want">台帳に追加</button>`;
-  return `<label class="inline">台帳: <select data-setst aria-label="台帳の状態">${Object.entries(stJa).map(([k, v]) => `<option value="${k}"${k === e.status ? ' selected' : ''}>${v}</option>`).join('')}</select></label>`;
+  return `<button type="button" class="star" data-star aria-pressed="${!!e.star}" title="重要（★）">${e.star ? '★' : '☆'}</button><label class="inline">台帳: <select data-setst aria-label="台帳の状態">${Object.entries(stJa).map(([k, v]) => `<option value="${k}"${k === e.status ? ' selected' : ''}>${v}</option>`).join('')}</select></label>`;
 }
 
 function showDetail(m) {
@@ -215,6 +228,7 @@ function showDetail(m) {
     </header>
     ${m.retracted ? '<div class="banner bad"><b>この論文は撤回されています。</b><span>引用・参照する前に、撤回の理由を出版社のページで確認してください。</span></div>' : ''}
     <div class="banner ${av.level}"><b>${esc(av.label)}</b><span>${esc(av.detail)}</span></div>
+    ${m.tldr ? `<p class="tldr"><span class="tag src">TLDR</span> ${esc(m.tldr)} <span class="sub">（Semantic Scholar による一行要約）</span> ${link(translateUrl(m.tldr), '翻訳')}</p>` : ''}
     ${m.abstract ? `<details class="abs"><summary>Abstract</summary><p>${esc(m.abstract)}</p><p>${link(translateUrl(m.abstract), '日本語に翻訳する（Google 翻訳）')}</p></details>` : ''}
     <div class="dtabs" role="tablist" aria-label="詳細の切り替え">
       ${TABS.map(([k, v]) => `<button type="button" role="tab" id="t_${k}" aria-controls="p_${k}" aria-selected="${k === tab}" data-tab="${k}">${v}</button>`).join('')}
@@ -233,7 +247,7 @@ function getPanel(m, doiUrl) {
   const oaItems = (m.oa || []).map((l) => `<li>${link(l.url, l.host || (l.url.split('/')[2] || l.url))}
     <span class="tag oa">${l.pdf ? 'PDF' : 'ページ'}</span>${verJa[l.version] ? `<span class="sub">${verJa[l.version]}</span>` : ''}${l.license ? ` <span class="sub">${esc(l.license)}</span>` : ''}</li>`).join('');
   // 上部の初回案内を閉じた人にだけ、ここで登録を促す
-  const emailAsk = settings.email || !settings.setupLater ? '' : `<form class="inline-form" data-email-form>
+  const emailAsk = settings.email || !(settings.setupHidden || settings.setupLater) ? '' : `<form class="inline-form" data-email-form>
       <label>メールアドレスを登録すると、Unpaywall でも無料版を探します
         <span class="row"><input type="email" placeholder="you@example.com" autocomplete="email" required><button type="submit" class="primary">登録して調べ直す</button></span></label></form>`;
   const to = m.authors[m.corresponding >= 0 ? m.corresponding : 0];
@@ -270,14 +284,16 @@ function getPanel(m, doiUrl) {
   </div>`;
 }
 
-const FORMATS = [['cite', '参考文献'], ['bib', 'BibTeX'], ['ris', 'RIS'], ['obs', 'Obsidian']];
+const FORMATS = [['cite', '参考文献'], ['bib', 'BibTeX'], ['ris', 'RIS'], ['csl', 'CSL JSON'], ['md', 'Markdown'], ['obs', 'Obsidian']];
 function formatText(m, f) {
-  return { cite: toCitation(m), bib: toBibTeX(m), ris: toRIS(m), obs: toObsidian(m, { status: inLedger(m)?.status, memo: inLedger(m)?.memo }) }[f];
+  const e = inLedger(m);
+  return { cite: toCitation(m), bib: toBibTeX(m), ris: toRIS(m), csl: toCSL(m), md: toMarkdownLink(m), obs: toObsidian(m, { status: e?.status, memo: e?.memo, tags: e?.tags, star: e?.star }) }[f];
 }
+const shareUrl = (m) => `${location.origin}${location.pathname}?q=${encodeURIComponent(m.doi || m.title)}`;
 function citePanel(m) {
   const fmt = settings.fmt || 'cite';
   const folder = safeUrl(settings.folder);
-  const share = `${location.origin}${location.pathname}?q=${encodeURIComponent(m.doi || m.title)}`;
+  const share = shareUrl(m);
   return `<div class="routes">
     <section class="route wide">
       <div class="seg" role="radiogroup" aria-label="形式">${FORMATS.map(([k, v]) => `<button type="button" role="radio" aria-checked="${k === fmt}" data-fmt="${k}">${v}</button>`).join('')}</div>
@@ -292,7 +308,7 @@ function citePanel(m) {
     <section class="route">
       <h3>このページへのリンク</h3>
       <pre id="c_share">${esc(share)}</pre>
-      <div class="row"><button type="button" data-copy="share">コピー</button></div>
+      <div class="row"><button type="button" data-copy="share">コピー</button>${navigator.share ? '<button type="button" data-share>共有…</button>' : ''}</div>
     </section>
   </div>`;
 }
@@ -346,7 +362,9 @@ $('#detail').addEventListener('click', (ev) => {
   if (fb) { settings.fmt = fb.dataset.fmt; markSettingsChanged(); $('#p_cite').innerHTML = citePanel(current); return; }
   const cb = t.closest('[data-copy]');
   if (cb) { const el = $('#c_' + cb.dataset.copy); copy(el.textContent, el); return; }
+  if (t.closest('[data-share]')) { navigator.share({ title: current.title, text: toCitation(current), url: shareUrl(current) }).catch(() => {}); return; }
   if (t.closest('#obsSave')) { download(fileName(current).replace(/\.pdf$/, '.md'), formatText(current, 'obs'), 'text/markdown'); return; }
+  if (t.closest('[data-star]')) { const e = inLedger(current); if (e) { e.star = !e.star; e.updatedAt = nowIso(); saveLedger(); $('#lctl').innerHTML = ledgerControl(current); } return; }
   const ab = t.closest('[data-add]');
   if (ab) { addLedger(current, ab.dataset.add); $('#lctl').innerHTML = ledgerControl(current); return; }
   if (t.closest('[data-open-settings]')) { openSettings(); return; }
@@ -432,22 +450,36 @@ function renderLedger() {
   $('#navcount').textContent = counts.want ? counts.want : '';
   $('#navcount').title = '未入手の件数';
   $('#lcount').textContent = ledger.length ? `${ledger.length} 件` : '';
+  renderTagFilter();
   const rows = filterLedger(ledger, lview);
   $('#ltbody').innerHTML = rows.length ? rows.map((e) => `<tr data-id="${esc(e.id)}" class="st-${e.status}">
     <td class="y">${esc(e.meta.year)}</td>
-    <td><button type="button" class="linkish t" data-act="open">${esc(e.meta.title)}</button>
-      <div class="sub">${esc(e.meta.authors.slice(0, 2).map(nameStr).join(', '))}${e.meta.authors.length > 2 ? ' ほか' : ''}${e.meta.venue ? ' · ' + esc(e.meta.venue) : ''}</div></td>
+    <td><div class="titlerow"><button type="button" class="star" data-act="star" aria-pressed="${!!e.star}" title="重要（★）">${e.star ? '★' : '☆'}</button><button type="button" class="linkish t" data-act="open">${esc(e.meta.title)}</button></div>
+      <div class="sub">${esc(e.meta.authors.slice(0, 2).map(nameStr).join(', '))}${e.meta.authors.length > 2 ? ' ほか' : ''}${e.meta.venue ? ' · ' + esc(e.meta.venue) : ''}</div>
+      <div class="tagrow">${(e.tags || []).map((t) => `<span class="tchip"><button type="button" data-act="tagfilter" data-tag="${esc(t)}" title="このタグで絞り込む">#${esc(t)}</button><button type="button" data-act="tagrm" data-tag="${esc(t)}" aria-label="タグ ${esc(t)} を外す">×</button></span>`).join('')}<input class="taginput" list="taglist" data-act="tagadd" placeholder="＋タグ" aria-label="タグを追加" maxlength="30"></div></td>
     <td><select aria-label="状態" data-act="st">${Object.entries(stJa).map(([k, v]) => `<option value="${k}"${k === e.status ? ' selected' : ''}>${v}</option>`).join('')}</select></td>
     <td><textarea rows="1" aria-label="メモ" data-act="memo" placeholder="メモ">${esc(e.memo)}</textarea></td>
     <td><button type="button" class="ghost" data-act="del">削除</button></td>
   </tr>`).join('') : `<tr><td colspan="5" class="empty">${ledger.length ? '条件に合う文献はありません。' : 'まだ何もありません。論文を調べて「台帳に追加」を押すと、ここに並びます。'}</td></tr>`;
   renderBackupNote();
 }
+// タグの絞り込み欄と入力候補。選んでいたタグが無くなったら絞り込みを外す
+function renderTagFilter() {
+  const tags = allTags(ledger);
+  if (lview.tag && !tags.some(([t]) => t === lview.tag)) lview.tag = '';
+  $('#ltag').innerHTML = '<option value="">すべてのタグ</option>' + tags.map(([t, n]) => `<option value="${esc(t)}"${t === lview.tag ? ' selected' : ''}>#${esc(t)}（${n}）</option>`).join('');
+  $('#ltag').hidden = !tags.length;
+  $('#taglist').innerHTML = tags.map(([t]) => `<option value="${esc(t)}">`).join('');
+  $('#lstar').setAttribute('aria-pressed', String(lview.star));
+}
 const rowEntry = (el) => ledger.find((x) => x.id === el.closest('tr').dataset.id);
 $('#ltbody').addEventListener('click', (ev) => {
   const b = ev.target.closest('[data-act]'); if (!b) return;
   const e = rowEntry(b);
   if (b.dataset.act === 'open') { tab = 'get'; openWork(e.meta); }
+  if (b.dataset.act === 'star') { e.star = !e.star; e.updatedAt = nowIso(); saveLedger(); if (current && lid(current) === e.id && $('#lctl')) $('#lctl').innerHTML = ledgerControl(current); }
+  if (b.dataset.act === 'tagrm') { e.tags = (e.tags || []).filter((t) => t !== b.dataset.tag); e.updatedAt = nowIso(); saveLedger(); }
+  if (b.dataset.act === 'tagfilter') { lview.tag = b.dataset.tag; renderLedger(); }
   if (b.dataset.act === 'del') {
     if (b.dataset.confirm) { ledger = ledger.filter((x) => x !== e); tombs.push({ id: e.id, updatedAt: nowIso() }); saveLedger(); toast('削除しました'); }
     else { b.dataset.confirm = '1'; b.textContent = 'もう一度押すと削除'; b.classList.add('danger'); setTimeout(() => { if (b.isConnected) { b.dataset.confirm = ''; b.textContent = '削除'; b.classList.remove('danger'); } }, 3000); }
@@ -456,6 +488,11 @@ $('#ltbody').addEventListener('click', (ev) => {
 $('#ltbody').addEventListener('change', (ev) => {
   const t = ev.target; const e = rowEntry(t);
   if (t.dataset.act === 'st') { e.status = t.value; e.updatedAt = nowIso(); saveLedger(); if (current && lid(current) === e.id) $('#lctl').innerHTML = ledgerControl(current); }
+  if (t.dataset.act === 'tagadd') {
+    const tag = normTag(t.value); t.value = '';
+    if (tag && !(e.tags || []).includes(tag)) { e.tags = [...(e.tags || []), tag]; e.updatedAt = nowIso(); saveLedger(); }
+    return;
+  }
   if (t.dataset.act === 'memo') { e.memo = t.value; e.updatedAt = nowIso(); persistLedger(); scheduleSync(); }
 });
 $('#ltabs').addEventListener('click', (ev) => {
@@ -464,6 +501,8 @@ $('#ltabs').addEventListener('click', (ev) => {
   $$('#ltabs [data-st]').forEach((x) => x.setAttribute('aria-selected', String(x === b)));
   renderLedger();
 });
+$('#ltag').addEventListener('change', (ev) => { lview.tag = ev.target.value; renderLedger(); });
+$('#lstar').addEventListener('click', () => { lview.star = !lview.star; renderLedger(); });
 $('#lfind').addEventListener('input', (ev) => { lview.text = ev.target.value; renderLedger(); });
 $('#lsort').addEventListener('change', (ev) => { lview.sort = ev.target.value; renderLedger(); });
 
@@ -481,11 +520,16 @@ function exportJson() {
 $('#backupNote').addEventListener('click', (ev) => { if (ev.target.id === 'quickBackup') exportJson(); });
 $('#exJson').addEventListener('click', exportJson);
 $('#exBib').addEventListener('click', () => download(`bunken_${today()}.bib`, ledger.map((e) => toBibTeX(e.meta)).join('\n\n'), 'text/plain'));
+$('#exObs').addEventListener('click', () => {
+  if (!ledger.length) { toast('台帳が空です'); return; }
+  download(`bunken-obsidian_${today()}.zip`, ledgerNotesZip(ledger, { today: today() }), 'application/zip');
+  toast('ZIP を書き出しました。Vault の中に展開してください');
+});
 $('#exRis').addEventListener('click', () => download(`bunken_${today()}.ris`, ledger.map((e) => toRIS(e.meta)).join('\n\n'), 'application/x-research-info-systems'));
 $('#exCsv').addEventListener('click', () => {
   const q = (s) => `"${String(s ?? '').replace(/"/g, '""')}"`;
-  const rows = [['状態', '年', 'タイトル', '著者', '誌名', 'DOI', 'メモ', '追加日']]
-    .concat(ledger.map((e) => [stJa[e.status], e.meta.year, e.meta.title, e.meta.authors.map(nameStr).join('; '), e.meta.venue, e.meta.doi, e.memo, e.addedAt]));
+  const rows = [['状態', '★', 'タグ', '年', 'タイトル', '著者', '誌名', 'DOI', 'メモ', '追加日']]
+    .concat(ledger.map((e) => [stJa[e.status], e.star ? '★' : '', (e.tags || []).join(' '), e.meta.year, e.meta.title, e.meta.authors.map(nameStr).join('; '), e.meta.venue, e.meta.doi, e.memo, e.addedAt]));
   download(`bunken-ledger_${today()}.csv`, '﻿' + rows.map((r) => r.map(q).join(',')).join('\r\n'), 'text/csv');
 });
 $('#imJson').addEventListener('change', async (ev) => {
@@ -675,15 +719,64 @@ $('#settingsForm').addEventListener('submit', (ev) => {
   if (settings.gistToken) { if (settings.gistId) scheduleSync(); else syncNow({ quiet: true }); }
   if (current) showDetail(current);
 });
-function refreshSetup() { $('#setup').hidden = !!settings.email || !!settings.setupLater; }
-$('#setupForm').addEventListener('submit', (ev) => {
+// ---------- はじめの設定（おすすめの設定を順に案内する）----------
+// 済んだものは一行で示し、未了のものだけ入力欄や操作を出す。値はこれまでの設定と同じ場所に保存する（メール・名前・保存先は同期の対象）。
+const SETUP_TEXT = {
+  email: { title: 'メールアドレスを登録', tag: '推奨', why: '無料で読める版を探す Unpaywall に必要です。アドレスは、Unpaywall・OpenAlex・Crossref への問い合わせにだけ添えます。', field: { type: 'email', ph: 'you@example.com', auto: 'email', btn: '登録' } },
+  name: { title: '名前を登録', tag: '任意', why: '著者に PDF を頼む依頼文の署名に入ります。', field: { type: 'text', ph: '山田太郎', auto: 'name', btn: '登録' } },
+  sync: { title: '別の端末と同期', tag: 'おすすめ', why: '台帳と設定を GitHub のシークレット Gist に預けて、スマホとパソコンで引き継ぎます。バックアップも兼ねます。' },
+  install: { title: 'ホーム画面に追加', tag: 'おすすめ', why: 'アドレスバーのない全画面で開け、オフラインでも台帳を見られます。' },
+  folder: { title: 'PDF の保存先フォルダを登録', tag: '任意', why: 'Google ドライブや Dropbox のフォルダの URL。論文の詳細から1クリックで開けます。', field: { type: 'url', ph: 'https://drive.google.com/drive/folders/...', auto: 'off', btn: '登録' } },
+};
+const setupEnv = () => ({ standalone });
+function refreshSetup() {
+  const steps = setupSteps(settings, setupEnv());
+  const card = $('#setup');
+  card.hidden = !showSetupCard(settings, setupEnv());
+  if (card.hidden) return;
+  // 最初に出すときだけ、メールアドレス未登録なら開き、登録済みなら折りたたむ（あとは本人の開閉を尊重する）
+  if (!card.dataset.init) { card.dataset.init = '1'; $('#setupDetails').open = !settings.email; }
+  // 入力途中の文字を、再描画（同期の取り込みなど）で消さない
+  const typed = Object.fromEntries($$('#setupList input').map((i) => [i.name, i.value]));
+  const focused = document.activeElement?.closest?.('#setupList') ? document.activeElement.name : '';
+  $('#setupProg').textContent = `${steps.filter((x) => x.done).length} / ${steps.length}`;
+  $('#setupList').innerHTML = steps.map(({ key, done }) => {
+    const t = SETUP_TEXT[key];
+    const value = key === 'email' ? settings.email : key === 'name' ? settings.name : key === 'folder' ? settings.folder : '';
+    if (done) return `<li class="step done"><span class="mark" aria-hidden="true">✓</span><span class="step-b"><b>${esc(t.title)}</b><span class="sub">${esc(value ? value.replace(/^https?:\/\//, '').slice(0, 40) : '完了')}</span></span></li>`;
+    let body;
+    if (t.field) body = `<form data-step="${key}" class="step-form" novalidate><label class="sr" for="st_${key}">${esc(t.title)}</label><input id="st_${key}" name="${key}" type="${t.field.type}" placeholder="${esc(t.field.ph)}" autocomplete="${t.field.auto}"><button type="submit" class="primary">${t.field.btn}</button></form><p class="err" hidden></p>`;
+    else if (key === 'sync') body = '<div class="row"><button type="button" class="primary" data-act="sync">設定を開く</button><span class="sub">GitHub のトークンを入れます</span></div>';
+    else body = installEvent
+      ? '<div class="row"><button type="button" class="primary" data-act="install">ホーム画面に追加</button></div>'
+      : '<div class="row"><span class="sub">ブラウザのメニュー（iPhone は共有ボタン）から「ホーム画面に追加」を選んでください。</span><button type="button" data-act="mark">追加した</button></div>';
+    return `<li class="step"><span class="mark" aria-hidden="true">${steps.findIndex((x) => x.key === key) + 1}</span><span class="step-b"><b>${esc(t.title)} <span class="req">${t.tag}</span></b><span class="sub">${esc(t.why)}</span>${body}</span></li>`;
+  }).join('');
+  for (const [name, v] of Object.entries(typed)) { const el = $(`#setupList input[name="${name}"]`); if (el) el.value = v; }
+  if (focused) $(`#setupList input[name="${focused}"]`)?.focus();
+}
+$('#setupList').addEventListener('submit', (ev) => {
+  const f = ev.target.closest('[data-step]'); if (!f) return;
   ev.preventDefault();
-  const v = $('#setupEmail').value.trim();
-  if (!isEmail(v)) { $('#setupErr').textContent = 'メールアドレスの形をご確認ください。'; $('#setupErr').hidden = false; return; }
-  settings.email = v; markSettingsChanged(); refreshSetup(); toast('登録しました');
-  if (current?.doi) lookupDoi(current.doi, current);
+  const key = f.dataset.step; const v = $('input', f).value.trim();
+  const err = !v ? '入力してください。' : key === 'email' && !isEmail(v) ? 'メールアドレスの形をご確認ください。'
+    : key === 'folder' && !safeUrl(v) ? 'https:// から始まる URL を入れてください。' : '';
+  const p = f.nextElementSibling;
+  if (err) { p.textContent = err; p.hidden = false; return; }
+  settings[key] = v; markSettingsChanged(); refreshSetup(); toast('登録しました');
+  if (key === 'email' && current?.doi) lookupDoi(current.doi, current);
 });
-$('#setupLater').addEventListener('click', () => { settings.setupLater = true; saveSettings(); refreshSetup(); toast('あとで「設定」から登録できます'); });
+$('#setupList').addEventListener('click', async (ev) => {
+  const b = ev.target.closest('[data-act]'); if (!b) return;
+  if (b.dataset.act === 'sync') openSettings('sync');
+  if (b.dataset.act === 'mark') { settings.installMarked = true; saveSettings(); refreshSetup(); }
+  if (b.dataset.act === 'install' && installEvent) {
+    installEvent.prompt(); await installEvent.userChoice.catch(() => {});
+    installEvent = null; $('#installBtn').hidden = true; refreshSetup();
+  }
+});
+$('#setupLater').addEventListener('click', () => { settings.setupHidden = true; saveSettings(); refreshSetup(); toast('「設定」の中から、いつでも表示できます'); });
+$('#setupShow').addEventListener('click', () => { delete settings.setupHidden; delete settings.setupLater; saveSettings(); $('#settings').close(); refreshSetup(); $('#setup').scrollIntoView({ block: 'start' }); });
 
 // ---------- 使い方・ブックマークレット ----------
 $('#bm').href = bookmarklet(location.origin + location.pathname);

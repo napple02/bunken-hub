@@ -109,11 +109,26 @@ h3 { font-size: 13px; letter-spacing: .06em; margin: 0; font-weight: 700; }
 .note { background: var(--warn-bg); color: var(--ink); border-radius: 6px; padding: 8px 12px; font-size: 13px; }
 .note button { font-size: 12px; padding: 2px 8px; margin-left: 4px; }
 
-/* 初回案内 */
+/* はじめの設定 */
 .setup { background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 10px; padding: 16px 18px; display: grid; gap: 10px; }
-.setup p { margin: 4px 0 0; font-size: 14px; max-width: 70ch; }
-.setup-form { display: flex; flex-wrap: wrap; gap: 8px; }
-.setup-form input { flex: 1 1 240px; }
+.setup-h { display: flex; align-items: center; gap: 10px; cursor: pointer; list-style: none; }
+.setup-h::-webkit-details-marker { display: none; }
+.setup-h::before { content: "▸"; color: var(--accent); }
+.setup details[open] > .setup-h::before { transform: rotate(90deg); }
+.setup-h h2 { flex: 0 1 auto; }
+.setup-body { display: grid; gap: 10px; padding-top: 10px; }
+.setup-body > p { margin: 0; }
+.setup-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.step { display: flex; gap: 12px; align-items: flex-start; background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; }
+.step.done { background: transparent; border-color: transparent; padding-block: 4px; align-items: center; }
+.step.done b { color: var(--muted); font-weight: 400; }
+.mark { flex: none; display: inline-grid; place-items: center; width: 1.7em; height: 1.7em; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 700; border: 1px solid var(--accent); }
+.step.done .mark { background: var(--oa); border-color: var(--oa); color: var(--card); }
+.step-b { display: grid; gap: 4px; min-width: 0; flex: 1; font-size: 14px; }
+.step-b .sub { overflow-wrap: anywhere; }
+.step-form { display: flex; flex-wrap: wrap; gap: 8px; }
+.step-form input { flex: 1 1 220px; width: auto; }
+.step-b .err { font-size: 13px; }
 
 /* 入力例・最近 */
 .hint { display: grid; gap: 8px; }
@@ -136,6 +151,12 @@ h3 { font-size: 13px; letter-spacing: .06em; margin: 0; font-weight: 700; }
 .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; margin-top: .55em; background: var(--warn); }
 .dot.free { background: var(--oa); } .dot.library { background: var(--lib); }
 
+/* 候補の絞り込み */
+.cand-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.cand-tools button { font-size: 13px; border-radius: 99px; padding: 3px 12px; }
+.cand-tools button[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.cand-tools select { width: auto; font-size: 13px; padding: 3px 8px; }
+
 /* 詳細 */
 .biblio { display: flex; gap: 16px; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; }
 .biblio-main { display: grid; gap: 2px; min-width: 0; flex: 1 1 420px; }
@@ -150,6 +171,7 @@ label.inline { display: flex; gap: 6px; align-items: center; font-size: 13px; co
 .banner.library { background: var(--lib-bg); border-color: var(--lib); } .banner.library b { color: var(--lib); }
 .banner.paid { background: var(--warn-bg); border-color: var(--warn); } .banner.paid b { color: var(--warn); }
 .banner.bad { background: var(--bad-bg); border-color: var(--bad); } .banner.bad b { color: var(--bad); }
+.tldr { margin: 0; font-size: 14px; max-width: 75ch; }
 .abs { font-size: 14px; color: var(--muted); }
 .abs p { margin: 8px 0 0; max-width: 75ch; }
 .dtabs { display: flex; gap: 2px; border-bottom: 1px solid var(--rule); overflow-x: auto; }
@@ -183,6 +205,8 @@ label.inline { display: flex; gap: 6px; align-items: center; font-size: 13px; co
 .tabs button[aria-selected=true] .n { color: inherit; opacity: .7; }
 .ledger-find { display: flex; gap: 6px; flex: 1 1 320px; max-width: 460px; }
 .ledger-find input { flex: 1; min-width: 0; }
+.ledger-find { flex-wrap: wrap; align-items: center; }
+.ledger-find select { max-width: 11em; }
 .ledger-find select { width: auto; }
 .tablewrap { overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
@@ -194,6 +218,17 @@ td .t { font-family: var(--f-title); font-weight: 700; line-height: 1.5; }
 td select { padding: 3px 6px; width: auto; }
 td textarea { min-width: 150px; padding: 4px 8px; font-size: 13px; resize: vertical; }
 tr.st-read td .t { color: var(--muted); }
+.titlerow { display: flex; gap: 6px; align-items: flex-start; }
+.star { border: 0; background: none; padding: 0 2px; font-size: 1.15em; line-height: 1.4; color: var(--muted); }
+.star[aria-pressed=true] { color: #c58a00; }
+.star:hover { border: 0; color: #c58a00; }
+.starfilter { font-size: 13px; border-radius: 99px; padding: 4px 12px; white-space: nowrap; }
+.starfilter[aria-pressed=true] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.tagrow { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 2px; }
+.tchip { display: inline-flex; border: 1px solid var(--rule); border-radius: 99px; background: var(--soft); font-size: 12px; overflow: hidden; }
+.tchip button { border: 0; background: none; padding: 0 6px; border-radius: 0; font-size: 12px; color: var(--accent); }
+.tchip button + button { padding-left: 2px; color: var(--muted); }
+.taginput { width: 7.5em !important; font-size: 12px; padding: 2px 8px !important; border-style: dashed !important; border-radius: 99px !important; background: transparent !important; }
 .ledger-more { display: grid; gap: 8px; }
 .ledger-more details { border-top: 1px solid var(--rule); padding-top: 10px; }
 .ledger-more summary { font-size: 14px; }

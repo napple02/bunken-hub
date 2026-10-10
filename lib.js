@@ -212,13 +212,14 @@ function toObsidian(m, opts = {}) {
     `title: ${q(m.title)}`,
     `created: ${today}`,
     `updated: ${today}`,
-    'tags: ["文献", "bunken-hub"]',
+    `tags: [${['文献', 'bunken-hub', ...(opts.tags || [])].map(q).join(', ')}]`,
     'source: bunken-hub',
     m.doi ? `doi: ${q(m.doi)}` : null,
     m.year ? `year: ${m.year}` : null,
     m.venue ? `journal: ${q(m.venue)}` : null,
     `authors: [${m.authors.map((a) => q(nameStr(a))).join(', ')}]`,
     opts.status ? `status: ${opts.status}` : null,
+    opts.star ? 'star: true' : null,
     '---',
   ].filter((x) => x !== null);
   const body = [
@@ -291,17 +292,80 @@ function bookmarklet(base) {
   return `javascript:(()=>{const m=document.querySelector('${sel}');const t=document.querySelector('meta[name="citation_title"]');const q=(m&&/10\\.\\d{4,9}\\//.test(m.content)?m.content:'')||(document.body.innerText.match(/10\\.\\d{4,9}\\/[^\\s"<>]+/)||[])[0]||(t&&t.content)||location.href;window.open('${base}?q='+encodeURIComponent(q));})()`;
 }
 
-// 台帳の絞り込みと並べ替え
-function filterLedger(list, { status = 'all', text = '', sort = 'added' } = {}) {
+// タグの正規化（先頭の # と余分な空白を除く。長すぎるものは切る）
+const normTag = (t) => String(t || '').replace(/^[#＃\s]+/, '').replace(/\s+/g, ' ').trim().slice(0, 30);
+// 台帳にあるタグと件数（多い順）
+function allTags(list) {
+  const n = new Map();
+  for (const e of list) for (const t of e.tags || []) n.set(t, (n.get(t) || 0) + 1);
+  return [...n].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ja'));
+}
+// 台帳の絞り込みと並べ替え。tag: 指定のタグがあるもの、star: ★付きのみ
+function filterLedger(list, { status = 'all', text = '', sort = 'added', tag = '', star = false } = {}) {
   const t = text.trim().toLowerCase();
-  const out = list.filter((e) => (status === 'all' || e.status === status) &&
-    (!t || [e.meta.title, e.meta.title_ja, e.meta.venue, e.memo, e.meta.doi, ...(e.meta.authors || []).map(nameStr)].join(' ').toLowerCase().includes(t)));
+  const out = list.filter((e) => (status === 'all' || e.status === status) && (!tag || (e.tags || []).includes(tag)) && (!star || e.star) &&
+    (!t || [e.meta.title, e.meta.title_ja, e.meta.venue, e.memo, e.meta.doi, ...(e.tags || []), ...(e.meta.authors || []).map(nameStr)].join(' ').toLowerCase().includes(t)));
   const by = {
     added: (a, b) => String(b.addedAt).localeCompare(String(a.addedAt)),
     year: (a, b) => (Number(b.meta.year) || 0) - (Number(a.meta.year) || 0),
     title: (a, b) => String(a.meta.title).localeCompare(String(b.meta.title), 'ja'),
   }[sort];
   return by ? out.sort(by) : out;
+}
+
+// 引用の別形式
+function toCSL(m) {
+  const o = { type: 'article-journal', title: m.title };
+  const au = m.authors.map((a) => (a.cjk || !a.given ? { literal: nameStr(a) } : { family: a.family, given: a.given }));
+  if (au.length) o.author = au;
+  if (m.year) o.issued = { 'date-parts': [[Number(m.year)]] };
+  Object.assign(o, Object.fromEntries([['container-title', m.venue], ['volume', m.volume], ['issue', m.issue], ['page', m.pages], ['publisher', m.publisher], ['DOI', m.doi], ['URL', m.doi ? 'https://doi.org/' + m.doi : m.landing]].filter(([, v]) => v)));
+  return JSON.stringify([o], null, 2);
+}
+function toMarkdownLink(m) {
+  const au = m.authors.slice(0, 2).map((a) => a.family || nameStr(a)).join('・') + (m.authors.length > 2 ? ' ほか' : '');
+  const url = m.doi ? 'https://doi.org/' + m.doi : m.landing;
+  return `${au ? au + ' ' : ''}${m.year ? '(' + m.year + ') ' : ''}${url ? `[${m.title}](${url})` : m.title}`;
+}
+
+// ---------- ZIP（無圧縮）の書き出し。Obsidian ノートをまとめて渡すために使う ----------
+const CRC_TABLE = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(bytes) { let c = 0xFFFFFFFF; for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+// files: [{ name, data: string | Uint8Array }]。名前は UTF-8（フラグ付き）で入れる
+function makeZip(files, date = new Date()) {
+  const enc = new TextEncoder();
+  const dosTime = (date.getHours() << 11) | (date.getMinutes() << 5) | (date.getSeconds() >> 1);
+  const dosDate = ((date.getFullYear() - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate();
+  const parts = []; const central = []; let offset = 0;
+  const u16 = (v) => [v & 255, (v >>> 8) & 255]; const u32 = (v) => [v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255];
+  for (const f of files) {
+    const name = enc.encode(f.name); const data = typeof f.data === 'string' ? enc.encode(f.data) : f.data; const crc = crc32(data);
+    const head = Uint8Array.from([0x50, 0x4b, 3, 4, ...u16(20), ...u16(0x0800), ...u16(0), ...u16(dosTime), ...u16(dosDate), ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(name.length), ...u16(0)]);
+    parts.push(head, name, data);
+    central.push(Uint8Array.from([0x50, 0x4b, 1, 2, ...u16(20), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(dosTime), ...u16(dosDate), ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(name.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(offset)]), name);
+    offset += head.length + name.length + data.length;
+  }
+  const cdSize = central.reduce((n, p) => n + p.length, 0);
+  const end = Uint8Array.from([0x50, 0x4b, 5, 6, ...u16(0), ...u16(0), ...u16(files.length), ...u16(files.length), ...u32(cdSize), ...u32(offset), ...u16(0)]);
+  const all = [...parts, ...central, end]; const out = new Uint8Array(all.reduce((n, p) => n + p.length, 0));
+  let pos = 0; for (const p of all) { out.set(p, pos); pos += p.length; }
+  return out;
+}
+// 台帳の全件を Obsidian ノートにして、一覧（00_文献一覧.md）と一緒に ZIP にする
+function ledgerNotesZip(entries, { folder = '文献ハブ', today } = {}) {
+  const used = new Set(); const files = []; const rows = [];
+  const stJa = { want: '未入手', have: '入手済', read: '読了' };
+  for (const e of entries) {
+    const base = fileName(e.meta).replace(/\.pdf$/, '').replace(/[#^[\]|]/g, '');
+    let name = base; for (let i = 2; used.has(name); i++) name = `${base}_${i}`;
+    used.add(name);
+    files.push({ name: `${folder}/${name}.md`, data: toObsidian(e.meta, { today, status: e.status, memo: e.memo, tags: e.tags, star: e.star }) });
+    rows.push({ name, e });
+  }
+  const sec = (st) => rows.filter((r) => r.e.status === st).map((r) => `- [[${r.name}]]${r.e.star ? ' ★' : ''} — ${r.e.meta.title}${r.e.meta.venue ? `（${r.e.meta.venue}, ${r.e.meta.year}）` : ''}`).join('\n') || '- なし';
+  const index = ['# 文献一覧', '', ...['want', 'have', 'read'].flatMap((st) => [`## ${stJa[st]}`, '', sec(st), ''])].join('\n');
+  files.unshift({ name: `${folder}/00_文献一覧.md`, data: index });
+  return makeZip(files);
 }
 
 // ---------- 端末間の引き継ぎ（GitHub Gist 同期・バックアップ）----------
@@ -397,9 +461,55 @@ function sharedQuery(params) {
   return plain || url || '';
 }
 
+// 「はじめの設定」の進み具合。env.standalone は、すでにアプリとして開いていること
+function setupSteps(settings, env = {}) {
+  const s = settings || {};
+  return [
+    { key: 'email', done: !!s.email },
+    { key: 'name', done: !!s.name },
+    { key: 'sync', done: !!s.gistToken },
+    { key: 'install', done: !!env.standalone || !!s.installMarked },
+    { key: 'folder', done: !!s.folder },
+  ];
+}
+// 設定カードを出すか。全部済んだか、本人が「あとで」を選んだら出さない（旧版の setupLater も同じ扱い）
+function showSetupCard(settings, env = {}) {
+  const steps = setupSteps(settings, env);
+  return steps.some((x) => !x.done) && !settings?.setupHidden && !settings?.setupLater;
+}
+
+// ---------- 無料版の探索先を増やす（Europe PMC・Semantic Scholar）----------
+// Europe PMC の search 結果（resultType=core）の1件から、無料で読める場所と abstract を取り出す
+function fromEuropePmc(r) {
+  const urls = r?.fullTextUrlList?.fullTextUrl || [];
+  const oa = urls.filter((u) => /open access/i.test(u.availability || '') && u.url)
+    .map((u) => ({ url: u.url, pdf: /pdf/i.test(u.documentStyle || ''), version: 'publishedVersion', host: 'Europe PMC', license: '' }));
+  if (!oa.length && r?.pmcid && r.isOpenAccess === 'Y') oa.push({ url: `https://europepmc.org/article/PMC/${String(r.pmcid).replace(/^PMC/i, '')}`, pdf: false, version: 'publishedVersion', host: 'Europe PMC', license: '' });
+  return { oa, abstract: String(r?.abstractText || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim() };
+}
+// Semantic Scholar の paper（fields=openAccessPdf,tldr,abstract）から取り出す
+function fromSemanticScholar(j) {
+  const pdf = j?.openAccessPdf?.url;
+  return { oa: pdf ? [{ url: pdf, pdf: true, version: '', host: 'Semantic Scholar', license: j.openAccessPdf.license || '' }] : [], tldr: j?.tldr?.text || '', abstract: j?.abstract || '' };
+}
+// 無料版の一覧を、URL の重複を除き、PDF → 出版社版 → 著者最終稿 → プレプリントの順に並べる
+function mergeOa(...lists) {
+  const seen = new Set(); const out = [];
+  for (const l of lists.flat()) { if (l && l.url && !seen.has(l.url)) { seen.add(l.url); out.push(l); } }
+  const rank = { publishedVersion: 0, acceptedVersion: 1, submittedVersion: 2 };
+  return out.sort((a, b) => (b.pdf ? 1 : 0) - (a.pdf ? 1 : 0) || (rank[a.version] ?? 3) - (rank[b.version] ?? 3));
+}
+
+// タイトル検索の候補の絞り込み・並べ替え。sort: rel（検索の順）| year | cited
+function filterCands(items, { oaOnly = false, jaOnly = false, sort = 'rel' } = {}) {
+  const out = items.filter((m) => (!oaOnly || m.isOa || (m.oa || []).length || m.digital) && (!jaOnly || hasJa(m.title) || hasJa(m.venue)));
+  const by = { year: (a, b) => (Number(b.year) || 0) - (Number(a.year) || 0), cited: (a, b) => (b.cited || 0) - (a.cited || 0) }[sort];
+  return by ? [...out].sort(by) : out;
+}
+
 if (typeof module !== 'undefined') {
   module.exports = { esc, safeUrl, hasJa, parseInput, splitName, nameStr, fromOpenAlex, fromCSL, fromCiNii, fromWatchPaper, fromNdlItem,
     reconstructAbstract, extractDois, bibKey, toBibTeX, toCitation, fileName, requestMail, searchLinks, toObsidian, verJa,
     toRIS, availability, authorLinks, graphLinks, translateUrl, isEmail, bookmarklet, filterLedger,
-    SYNC_KEYS, SYNC_FILE, compactMeta, mergeLedgers, mergeSync, buildSyncPayload, buildBackup, parseImport, sharedQuery };
+    SYNC_KEYS, SYNC_FILE, compactMeta, mergeLedgers, mergeSync, buildSyncPayload, buildBackup, parseImport, sharedQuery, setupSteps, showSetupCard, fromEuropePmc, fromSemanticScholar, mergeOa, filterCands, normTag, allTags, toCSL, toMarkdownLink, crc32, makeZip, ledgerNotesZip };
 }

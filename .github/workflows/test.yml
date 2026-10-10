@@ -1,0 +1,22 @@
+name: テスト
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 構文を確かめる
+        run: for f in lib.js app.js pwa.js theme.js sw.js; do node --check "$f"; done
+      - name: 単体テストと構成のテスト
+        run: npm test

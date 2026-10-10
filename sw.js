@@ -3,8 +3,8 @@
 // 論文の検索に使う外部 API（OpenAlex・Crossref など）には一切介入しない。フォントだけは控えを使い回す。
 const CACHE = 'bunken-hub-shell-v1';
 const FONTS = 'bunken-hub-fonts-v1';
-const SHELL = ['./', 'index.html', 'style.css', 'lib.js', 'app.js', 'manifest.webmanifest',
-  'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
+const SHELL = ['./', 'index.html', 'style.css', 'theme.js', 'lib.js', 'app.js', 'pwa.js', 'manifest.webmanifest',
+  'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

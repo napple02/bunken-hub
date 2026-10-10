@@ -135,3 +135,40 @@ test('OpenAlex の work から撤回・責任著者・参照文献を読む', ()
   assert.deepEqual(m.refIds, ['W2']);
   assert.equal(m.orcids[1], 'https://orcid.org/0000');
 });
+
+test('Europe PMC: 無料の全文リンクと abstract を取り出す', () => {
+  const r = L.fromEuropePmc({ pmcid: 'PMC123', isOpenAccess: 'Y', abstractText: '<h4>Background</h4> Text   here.',
+    fullTextUrlList: { fullTextUrl: [{ availability: 'Subscription required', documentStyle: 'html', url: 'https://x/paid' }, { availability: 'Open access', documentStyle: 'pdf', url: 'https://europepmc.org/a.pdf' }] } });
+  assert.deepEqual(r.oa.map((l) => [l.url, l.pdf]), [['https://europepmc.org/a.pdf', true]]);
+  assert.equal(r.abstract, 'Background Text here.');
+  const fb = L.fromEuropePmc({ pmcid: 'PMC999', isOpenAccess: 'Y' });
+  assert.equal(fb.oa[0].url, 'https://europepmc.org/article/PMC/999');
+  assert.deepEqual(L.fromEuropePmc(undefined).oa, []);
+});
+
+test('Semantic Scholar: openAccessPdf と TLDR を取り出す', () => {
+  const r = L.fromSemanticScholar({ openAccessPdf: { url: 'https://s2/a.pdf' }, tldr: { text: 'One line.' }, abstract: 'A' });
+  assert.equal(r.oa[0].url, 'https://s2/a.pdf');
+  assert.equal(r.tldr, 'One line.');
+  assert.deepEqual(L.fromSemanticScholar({}).oa, []);
+});
+
+test('無料版の並べ替え: 重複を除き、PDF と出版社版を先に', () => {
+  const m = L.mergeOa(
+    [{ url: 'https://a', pdf: false, version: 'publishedVersion' }, { url: 'https://b', pdf: true, version: 'submittedVersion' }],
+    [{ url: 'https://c', pdf: true, version: 'publishedVersion' }, { url: 'https://a', pdf: false }, null],
+  );
+  assert.deepEqual(m.map((l) => l.url), ['https://c', 'https://b', 'https://a']);
+});
+
+test('候補の絞り込みと並べ替え', () => {
+  const a = { title: 'A study', venue: 'Nature', year: 2020, cited: 5, isOa: true, oa: [] };
+  const b = { title: '分子模型の授業', venue: '化学と教育', year: 2022, cited: 1, isOa: false, oa: [] };
+  const c = { title: 'Ndl book', venue: '', year: 2010, cited: 99, isOa: false, oa: [], digital: true };
+  assert.deepEqual(L.filterCands([a, b, c]).length, 3);
+  assert.deepEqual(L.filterCands([a, b, c], { oaOnly: true }), [a, c]);
+  assert.deepEqual(L.filterCands([a, b, c], { jaOnly: true }), [b]);
+  assert.deepEqual(L.filterCands([a, b, c], { sort: 'year' }), [b, a, c]);
+  assert.deepEqual(L.filterCands([a, b, c], { sort: 'cited' }), [c, a, b]);
+  assert.deepEqual([a, b, c].map((x) => x.title), ['A study', '分子模型の授業', 'Ndl book']);   // 元の配列は並べ替えない
+});
