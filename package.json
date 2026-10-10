@@ -3,6 +3,7 @@
   "private": true,
   "description": "論文の書誌・本文入手ルート・台帳を既存サービスをつないで1画面にまとめる個人用ハブ",
   "scripts": {
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "e2e": "node tests/e2e/sync-pwa.mjs && node tests/e2e/features.mjs && node tests/e2e/setup.mjs"
   }
 }

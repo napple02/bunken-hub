@@ -68,7 +68,9 @@ pwa.js                Service Worker の登録、ホーム画面へ追加、オ�
 sw.js                 Service Worker（オフライン用の控え）
 manifest.webmanifest  アプリの定義（アイコン・共有の受け取り・ショートカット）
 icons/                アイコン（scripts/make-icons.mjs で書き出し）
-tests/                単体テストと構成のテスト
+tests/                単体テストと構成のテスト。tests/e2e/ はブラウザでの通しの確認（npm run e2e）
+docs/開発記録.md       経緯・設計の判断・未確認事項・次にやること
+CLAUDE.md             今後の作業のための決まり事
 ```
 
 ## 使い方
@@ -76,8 +78,13 @@ tests/                単体テストと構成のテスト
 2. 最初に「設定」でメールアドレスを入れる（Unpaywall の利用に必要）
 3. OpenAlex の API キーを持っていれば、それも入れる
 
+## 記録
+経緯・設計の判断・実機で最初に確かめること・次にやることは [docs/開発記録.md](docs/開発記録.md) にまとめています。
+
 ## テスト
 （GitHub Actions でも、push と PR のたびに自動で実行します）
+
+ブラウザでの通しの確認は `npm run e2e`（Playwright と Chromium が必要。外部 API と GitHub の Gist は模したデータで、2端末の同期・オフライン・共有・★とタグ・ZIP・はじめの設定・CSP を確かめます）。
 ```bash
 npm test   # = node --test tests/*.test.js（依存パッケージなし）。同期のマージ・共有の解釈・PWA の構成を確かめる
 ```
