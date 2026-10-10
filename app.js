@@ -12,6 +12,16 @@ const store = {
 const SKEY = 'bunkenhub.settings.v1';
 let settings = store.get(SKEY, {});
 const saveSettings = () => store.set(SKEY, settings);
+const nowIso = () => new Date().toISOString();
+// 端末をまたいで共有する設定を変えたときに呼ぶ。更新時刻を進めて、同期の対象にする
+function markSettingsChanged() { settings.settingsUpdatedAt = nowIso(); saveSettings(); scheduleSync(); }
+// 表示テーマ（端末ごと）。空なら端末の設定に合わせる
+function applyTheme() {
+  const t = settings.theme === 'light' || settings.theme === 'dark' ? settings.theme : '';
+  if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+  const colors = { light: '#f2f5f4', dark: '#131a1c' };
+  $$('meta[name="theme-color"]').forEach((m) => { m.content = colors[t || m.dataset.scheme]; });
+}
 
 function toast(msg) {
   const t = $('#toast'); t.textContent = msg; t.hidden = false;
@@ -134,7 +144,12 @@ let lastCands = [];
 const LKEY = 'bunkenhub.ledger.v1';
 const RKEY = 'bunkenhub.recent.v1';
 const WATCH_IMPORT_MAX = 50;
+const TKEY = 'bunkenhub.tombs.v1';   // 削除した文献の墓標（他の端末へ削除を伝えるため）
 let ledger = store.get(LKEY, []);
+let tombs = store.get(TKEY, []);
+const persistLedger = () => store.set(LKEY, ledger) && store.set(TKEY, tombs);
+const newEntry = (m, status) => ({ id: lid(m), status, memo: '', addedAt: today(), updatedAt: nowIso(), meta: compactMeta(m) });
+const rememberEntry = (e) => { tombs = tombs.filter((t) => t.id !== e.id); ledger.unshift(e); };
 let recent = store.get(RKEY, []);
 const lview = { status: 'all', text: '', sort: 'added' };
 const stJa = { want: '未入手', have: '入手済', read: '読了' };
@@ -328,7 +343,7 @@ $('#detail').addEventListener('click', (ev) => {
     return;
   }
   const fb = t.closest('[data-fmt]');
-  if (fb) { settings.fmt = fb.dataset.fmt; saveSettings(); $('#p_cite').innerHTML = citePanel(current); return; }
+  if (fb) { settings.fmt = fb.dataset.fmt; markSettingsChanged(); $('#p_cite').innerHTML = citePanel(current); return; }
   const cb = t.closest('[data-copy]');
   if (cb) { const el = $('#c_' + cb.dataset.copy); copy(el.textContent, el); return; }
   if (t.closest('#obsSave')) { download(fileName(current).replace(/\.pdf$/, '.md'), formatText(current, 'obs'), 'text/markdown'); return; }
@@ -346,7 +361,7 @@ $('#detail').addEventListener('submit', async (ev) => {
   ev.preventDefault();
   const v = $('input', f).value.trim();
   if (!isEmail(v)) { toast('メールアドレスの形をご確認ください'); return; }
-  settings.email = v; saveSettings(); refreshSetup();
+  settings.email = v; markSettingsChanged(); refreshSetup();
   toast('登録しました。調べ直します');
   if (current?.doi) lookupDoi(current.doi, current);
 });
@@ -399,15 +414,17 @@ $('#recent').addEventListener('click', (ev) => {
 
 // ---------- 台帳 ----------
 function saveLedger() {
-  if (!store.set(LKEY, ledger)) toast('保存できませんでした。書き出しで控えを取ってください');
-  renderLedger();
+  if (!persistLedger()) toast('保存できませんでした。書き出しで控えを取ってください');
+  renderLedger(); scheduleSync();
 }
 function addLedger(m, st) {
   const ex = inLedger(m);
-  if (ex) { ex.status = st; toast(`台帳の状態を「${stJa[st]}」にしました`); }
-  else { ledger.unshift({ id: lid(m), status: st, memo: '', addedAt: today(), meta: m }); toast('台帳に追加しました'); }
+  if (ex) { ex.status = st; ex.updatedAt = nowIso(); toast(`台帳の状態を「${stJa[st]}」にしました`); }
+  else { rememberEntry(newEntry(m, st)); toast('台帳に追加しました'); requestPersist(); }
   saveLedger();
 }
+// 容量が足りなくなってもブラウザに台帳を消されないよう、保存の継続を頼む（断られても支障はない）
+function requestPersist() { try { navigator.storage?.persist?.(); } catch {} }
 function renderLedger() {
   const counts = { all: ledger.length, want: 0, have: 0, read: 0 };
   for (const e of ledger) counts[e.status] = (counts[e.status] || 0) + 1;
@@ -432,14 +449,14 @@ $('#ltbody').addEventListener('click', (ev) => {
   const e = rowEntry(b);
   if (b.dataset.act === 'open') { tab = 'get'; openWork(e.meta); }
   if (b.dataset.act === 'del') {
-    if (b.dataset.confirm) { ledger = ledger.filter((x) => x !== e); saveLedger(); toast('削除しました'); }
+    if (b.dataset.confirm) { ledger = ledger.filter((x) => x !== e); tombs.push({ id: e.id, updatedAt: nowIso() }); saveLedger(); toast('削除しました'); }
     else { b.dataset.confirm = '1'; b.textContent = 'もう一度押すと削除'; b.classList.add('danger'); setTimeout(() => { if (b.isConnected) { b.dataset.confirm = ''; b.textContent = '削除'; b.classList.remove('danger'); } }, 3000); }
   }
 });
 $('#ltbody').addEventListener('change', (ev) => {
   const t = ev.target; const e = rowEntry(t);
-  if (t.dataset.act === 'st') { e.status = t.value; saveLedger(); if (current && lid(current) === e.id) $('#lctl').innerHTML = ledgerControl(current); }
-  if (t.dataset.act === 'memo') { e.memo = t.value; store.set(LKEY, ledger); }
+  if (t.dataset.act === 'st') { e.status = t.value; e.updatedAt = nowIso(); saveLedger(); if (current && lid(current) === e.id) $('#lctl').innerHTML = ledgerControl(current); }
+  if (t.dataset.act === 'memo') { e.memo = t.value; e.updatedAt = nowIso(); persistLedger(); scheduleSync(); }
 });
 $('#ltabs').addEventListener('click', (ev) => {
   const b = ev.target.closest('[data-st]'); if (!b) return;
@@ -458,7 +475,7 @@ function renderBackupNote() {
   if (need) el.innerHTML = `${days === null ? 'まだ一度もバックアップしていません。' : `最後のバックアップから ${days} 日たっています。`}台帳はこのブラウザにしか保存されていません。 <button type="button" id="quickBackup">今すぐ JSON で書き出す</button>`;
 }
 function exportJson() {
-  download(`bunken-ledger_${today()}.json`, JSON.stringify(ledger, null, 2), 'application/json');
+  download(`bunken-ledger_${today()}.json`, JSON.stringify(buildBackup(settings, ledger), null, 2), 'application/json');
   settings.lastExport = new Date().toISOString(); saveSettings(); renderBackupNote();
 }
 $('#backupNote').addEventListener('click', (ev) => { if (ev.target.id === 'quickBackup') exportJson(); });
@@ -474,18 +491,22 @@ $('#exCsv').addEventListener('click', () => {
 $('#imJson').addEventListener('change', async (ev) => {
   const f = ev.target.files[0]; if (!f) return;
   try {
-    const arr = JSON.parse(await f.text());
-    if (!Array.isArray(arr)) throw new Error();
-    let n = 0;
-    const isWatch = arr.length && arr[0] && !arr[0].meta && 'journal' in arr[0] && 'title' in arr[0];
-    if (isWatch) {
+    const imp = parseImport(JSON.parse(await f.text()));
+    if (!imp) throw new Error();
+    if (imp.kind === 'watch') {
       // edu-research-watch の出力。papers.json は数千件あるのでスコア上位だけを未入手として入れる
-      const top = [...arr].sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, WATCH_IMPORT_MAX);
-      for (const p of top) { const m = fromWatchPaper(p); const id = lid(m); if (m.title && !ledger.some((x) => x.id === id)) { ledger.push({ id, status: 'want', memo: '', addedAt: today(), meta: m }); n++; } }
-      saveLedger(); toast(`ウォッチから ${n} 件を追加しました${arr.length > WATCH_IMPORT_MAX ? `（スコア上位 ${WATCH_IMPORT_MAX} 件まで）` : ''}`);
+      const top = [...imp.papers].sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, WATCH_IMPORT_MAX);
+      let n = 0;
+      for (const p of top) { const m = fromWatchPaper(p); if (m.title && !ledger.some((x) => x.id === lid(m))) { rememberEntry(newEntry(m, 'want')); n++; } }
+      saveLedger(); toast(`ウォッチから ${n} 件を追加しました${imp.papers.length > WATCH_IMPORT_MAX ? `（スコア上位 ${WATCH_IMPORT_MAX} 件まで）` : ''}`);
     } else {
-      for (const e of arr) { if (e && e.id && e.meta && !ledger.some((x) => x.id === e.id)) { ledger.push(e); n++; } }
-      saveLedger(); toast(`${n} 件を読み込みました`);
+      // バックアップ。同じ文献は更新が新しいほうを残し、設定は手元で未入力のものだけ補う
+      const before = ledger.length;
+      ({ entries: ledger, tombs } = mergeLedgers({ entries: ledger, tombs }, { entries: imp.entries, tombs: [] }));
+      let filled = 0;
+      for (const k of SYNC_KEYS) if (!settings[k] && imp.settings[k]) { settings[k] = imp.settings[k]; filled++; }
+      if (filled) { markSettingsChanged(); refreshSetup(); }
+      saveLedger(); toast(`${Math.max(0, ledger.length - before)} 件を読み込みました${filled ? `（設定 ${filled} 項目も引き継ぎました）` : ''}`);
     }
   } catch { toast('読み込めませんでした。このツールか edu-research-watch が書き出した JSON を選んでください'); }
   ev.target.value = '';
@@ -500,29 +521,158 @@ $('#bulkAdd').addEventListener('click', async () => {
     setStatus(`まとめて追加 ${i + 1}/${dois.length}: ${doi}`, true);
     if (ledger.some((x) => x.id === doi)) continue;
     const m = await byDoi(doi);
-    if (m) { ledger.unshift({ id: lid(m), status: 'want', memo: '', addedAt: today(), meta: m }); n++; renderLedger(); }
+    if (m) { rememberEntry(newEntry(m, 'want')); n++; renderLedger(); }
   }
   saveLedger(); btn.disabled = false;
   setStatus(`${dois.length} 件の DOI のうち ${n} 件を台帳に追加しました（すでにあるもの・取得できなかったものを除く）。`);
   $('#bulk').value = ''; $('#bulkCount').textContent = '';
 });
 
+// ---------- 端末間の同期（GitHub のシークレット Gist）----------
+// 台帳と設定を、本人の GitHub アカウントのシークレット Gist（bunken-hub-sync.json）に預ける。
+// 別の端末では同じトークンを入れるだけで、見つけて取り込む。マージは lib.js の mergeSync が行う（新しいほうを採用・削除は墓標で伝える）。
+const GH = 'https://api.github.com';
+let syncing = false; let syncTimer = 0; let resync = false;
+let syncState = 'off';
+async function gh(path, opts = {}) {
+  const r = await fetch(GH + path, { ...opts, headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${settings.gistToken}`, ...(opts.body ? { 'Content-Type': 'application/json' } : {}) } });
+  if (!r.ok) { const e = new Error('HTTP ' + r.status); e.status = r.status; throw e; }
+  return r.json();
+}
+async function readGist(id) {
+  const g = await gh(`/gists/${id}`);
+  const f = g.files?.[SYNC_FILE];
+  if (!f) return null;
+  const text = f.truncated ? await (await fetch(f.raw_url)).text() : f.content;
+  const data = JSON.parse(text);
+  return data && data.app === 'bunken-hub' ? data : null;
+}
+async function findGist() {
+  for (let page = 1; page <= 5; page++) {
+    const list = await gh(`/gists?per_page=100&page=${page}`);
+    const hit = list.find((g) => g.files?.[SYNC_FILE]);
+    if (hit) return hit.id;
+    if (list.length < 100) break;
+  }
+  return '';
+}
+function syncErrorText(e) {
+  if (e.status === 401) return 'トークンが正しくないか、期限が切れています。設定で入れ直してください。';
+  if (e.status === 403) return 'トークンに gist の権限がないか、GitHub の利用制限にかかっています。';
+  if (e.status === 404) return '同期用の Gist が見つかりませんでした。もう一度「接続して同期」を押してください。';
+  if (e instanceof SyntaxError) return '同期データを読み取れませんでした。';
+  return 'GitHub に接続できませんでした。通信を確かめてください。';
+}
+function setSyncState(state, err) {
+  syncState = state;
+  const b = $('#syncBtn'); b.dataset.state = state;
+  const t = settings.lastSync ? new Date(settings.lastSync).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+  $('#syncLabel').textContent = { off: '同期', busy: '同期中…', ok: '同期済', error: '同期エラー', offline: '同期（オフライン）' }[state];
+  b.title = { off: '他の端末と台帳・設定を同期する（設定が必要です）', busy: '同期しています', ok: `最後の同期: ${t}`, error: err ? syncErrorText(err) : '同期できませんでした', offline: 'オフラインのため、あとで同期します' }[state];
+  renderSyncInfo(err);
+}
+function renderSyncInfo(err) {
+  const el = $('#syncInfo'); if (!el) return;
+  const t = settings.lastSync ? new Date(settings.lastSync).toLocaleString('ja-JP') : '';
+  el.textContent = err ? syncErrorText(err) : settings.gistToken ? (t ? `最後の同期: ${t}` : '接続済みです。まだ同期していません。') : '';
+  el.classList.toggle('err', !!err);
+  $('#syncOff').hidden = !settings.gistToken;
+}
+function scheduleSync() {
+  if (!settings.gistToken || settings.autoSync === false) return;
+  if (syncing) { resync = true; return; }
+  clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow({ quiet: true }), 2500);
+}
+async function syncNow({ quiet = false } = {}) {
+  if (!settings.gistToken) { if (!quiet) openSettings(); return; }
+  if (syncing) { if (!quiet) toast('同期しています。しばらくお待ちください'); return; }
+  if (!navigator.onLine) { setSyncState('offline'); if (!quiet) toast('オフラインです。つながったら同期します'); return; }
+  syncing = true; setSyncState('busy');
+  try {
+    let id = settings.gistId || ''; let remote = null;
+    if (id) { try { remote = await readGist(id); } catch (e) { if (e.status !== 404) throw e; id = ''; } }
+    if (!id) { id = await findGist(); if (id) remote = await readGist(id); }
+    const r = mergeSync({ entries: ledger, tombs, settings }, remote);
+    if (r.pull) applyMerged(r.next);
+    if (r.push || !id) {
+      const files = { [SYNC_FILE]: { content: JSON.stringify(buildSyncPayload(r.next)) } };
+      if (id) await gh(`/gists/${id}`, { method: 'PATCH', body: JSON.stringify({ files }) });
+      else id = (await gh('/gists', { method: 'POST', body: JSON.stringify({ description: '文献ハブの同期データ（bunken-hub）', public: false, files }) })).id;
+    }
+    settings.gistId = id; settings.lastSync = nowIso(); saveSettings();
+    setSyncState('ok');
+    if (!quiet) toast(r.pull ? '他の端末の変更を取り込みました' : r.push ? '同期しました' : '最新の状態です');
+  } catch (e) {
+    setSyncState('error', e);
+    if (!quiet) toast(syncErrorText(e));
+  } finally {
+    syncing = false;
+    if (resync) { resync = false; scheduleSync(); }
+  }
+}
+// マージ結果を手元に反映する
+function applyMerged(next) {
+  ledger = next.entries; tombs = next.tombs;
+  for (const k of SYNC_KEYS) { if (next.settings[k]) settings[k] = next.settings[k]; else delete settings[k]; }
+  settings.settingsUpdatedAt = next.settingsUpdatedAt;
+  persistLedger(); saveSettings();
+  renderLedger(); refreshSetup();
+  if (current && $('#lctl')) $('#lctl').innerHTML = ledgerControl(current);
+}
+$('#syncBtn').addEventListener('click', () => { if (settings.gistToken) syncNow(); else openSettings('sync'); });
+$('#syncConnect').addEventListener('click', () => {
+  if (!$('#s_token').value.trim()) { toast('トークンを入れてください'); return; }
+  // 同じ画面に入力したメールアドレスなども、ここで一緒に保存する（同期の対象にするため）
+  const err = saveSettingsForm();
+  if (err) { $('#settingsErr').textContent = err; $('#settingsErr').hidden = false; return; }
+  $('#settingsErr').hidden = true;
+  setSyncState('off'); syncNow();
+});
+$('#syncOff').addEventListener('click', () => {
+  delete settings.gistToken; delete settings.gistId; delete settings.lastSync; saveSettings();
+  $('#s_token').value = ''; setSyncState('off'); toast('接続を解除しました。同期データ（Gist）は GitHub に残ります');
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && settings.gistToken && settings.autoSync !== false && Date.now() - Date.parse(settings.lastSync || 0) > 60000) syncNow({ quiet: true });
+});
+addEventListener('online', () => { if (settings.gistToken) scheduleSync(); });
+
 // ---------- 設定・初回案内 ----------
 const sMap = { email: '#s_email', name: '#s_name', folder: '#s_folder', oakey: '#s_oakey', cinii: '#s_cinii' };
-function openSettings() {
+function openSettings(focus) {
   for (const [k, s] of Object.entries(sMap)) $(s).value = settings[k] || '';
+  $('#s_theme').value = settings.theme || '';
+  $('#s_token').value = settings.gistToken || '';
+  $('#s_auto').checked = settings.autoSync !== false;
   $('#settingsErr').hidden = true;
+  renderSyncInfo();
   $('#settings').showModal();
+  if (focus === 'sync') $('#s_token').focus();
 }
-$('#openSettings').addEventListener('click', openSettings);
-$('#settingsForm').addEventListener('submit', (ev) => {
-  if (ev.submitter?.value !== 'save') return;
+$('#openSettings').addEventListener('click', () => openSettings());
+// 設定画面の入力を検査して保存する。問題があれば文言を返す（保存しない）
+function saveSettingsForm() {
   const email = $('#s_email').value.trim();
   const folder = $('#s_folder').value.trim();
-  const err = !email || isEmail(email) ? (!folder || safeUrl(folder) ? '' : 'フォルダの URL は https:// から始まる形で入れてください。') : 'メールアドレスの形をご確認ください。';
-  if (err) { ev.preventDefault(); $('#settingsErr').textContent = err; $('#settingsErr').hidden = false; return; }
+  if (email && !isEmail(email)) return 'メールアドレスの形をご確認ください。';
+  if (folder && !safeUrl(folder)) return 'フォルダの URL は https:// から始まる形で入れてください。';
+  const before = JSON.stringify(SYNC_KEYS.map((k) => settings[k] || ''));
   for (const [k, s] of Object.entries(sMap)) settings[k] = $(s).value.trim();
-  saveSettings(); refreshSetup(); toast('設定を保存しました');
+  settings.theme = $('#s_theme').value;
+  const token = $('#s_token').value.trim();
+  if (token !== (settings.gistToken || '')) { if (token) settings.gistToken = token; else { delete settings.gistToken; delete settings.gistId; } }
+  settings.autoSync = $('#s_auto').checked;
+  if (JSON.stringify(SYNC_KEYS.map((k) => settings[k] || '')) !== before) settings.settingsUpdatedAt = nowIso();
+  saveSettings(); applyTheme(); refreshSetup();
+  return '';
+}
+$('#settingsForm').addEventListener('submit', (ev) => {
+  if (ev.submitter?.value !== 'save') return;
+  const err = saveSettingsForm();
+  if (err) { ev.preventDefault(); $('#settingsErr').textContent = err; $('#settingsErr').hidden = false; return; }
+  setSyncState(settings.gistToken ? (syncState === 'off' ? 'ok' : syncState) : 'off');
+  toast('設定を保存しました');
+  if (settings.gistToken) { if (settings.gistId) scheduleSync(); else syncNow({ quiet: true }); }
   if (current) showDetail(current);
 });
 function refreshSetup() { $('#setup').hidden = !!settings.email || !!settings.setupLater; }
@@ -530,7 +680,7 @@ $('#setupForm').addEventListener('submit', (ev) => {
   ev.preventDefault();
   const v = $('#setupEmail').value.trim();
   if (!isEmail(v)) { $('#setupErr').textContent = 'メールアドレスの形をご確認ください。'; $('#setupErr').hidden = false; return; }
-  settings.email = v; saveSettings(); refreshSetup(); toast('登録しました');
+  settings.email = v; markSettingsChanged(); refreshSetup(); toast('登録しました');
   if (current?.doi) lookupDoi(current.doi, current);
 });
 $('#setupLater').addEventListener('click', () => { settings.setupLater = true; saveSettings(); refreshSetup(); toast('あとで「設定」から登録できます'); });
@@ -546,8 +696,13 @@ $$('[data-ex]').forEach((b) => b.addEventListener('click', () => { $('#q').value
 document.addEventListener('keydown', (ev) => {
   if (ev.key === '/' && !ev.target.closest('input, textarea, select, [contenteditable]')) { ev.preventDefault(); $('#q').focus(); }
 });
+applyTheme();
 renderLedger();
 renderRecent();
 refreshSetup();
-const qp = new URLSearchParams(location.search).get('q');
+setSyncState(settings.gistToken ? (settings.lastSync ? 'ok' : 'off') : 'off');
+if (settings.gistToken && settings.autoSync !== false) setTimeout(() => syncNow({ quiet: true }), 600);
+// 検索語は ?q= のほか、共有メニュー（Web Share Target）から渡される title・text・url からも受け取る
+const params = new URLSearchParams(location.search);
+const qp = params.get('q') || sharedQuery(params);
 if (qp) { $('#q').value = qp; run(qp); }
