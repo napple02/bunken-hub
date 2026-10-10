@@ -22,7 +22,7 @@ function markSettingsChanged() { settings.settingsUpdatedAt = nowIso(); saveSett
 function applyTheme() {
   const t = settings.theme === 'light' || settings.theme === 'dark' ? settings.theme : '';
   if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
-  const colors = { light: '#f2f5f4', dark: '#131a1c' };
+  const colors = { light: '#f3f5f4', dark: '#0f1618' };
   $$('meta[name="theme-color"]').forEach((m) => { m.content = colors[t || m.dataset.scheme]; });
 }
 
@@ -472,12 +472,12 @@ function renderLedger() {
   const rows = filterLedger(ledger, lview);
   $('#ltbody').innerHTML = rows.length ? rows.map((e) => `<tr data-id="${esc(e.id)}" class="st-${e.status}">
     <td class="y">${esc(e.meta.year)}</td>
-    <td><div class="titlerow"><button type="button" class="star" data-act="star" aria-pressed="${!!e.star}" title="重要（★）">${e.star ? '★' : '☆'}</button><button type="button" class="linkish t" data-act="open">${esc(e.meta.title)}</button></div>
+    <td class="tt"><div class="titlerow"><button type="button" class="star" data-act="star" aria-pressed="${!!e.star}" title="重要（★）">${e.star ? '★' : '☆'}</button><button type="button" class="linkish t" data-act="open">${esc(e.meta.title)}</button></div>
       <div class="sub">${esc(e.meta.authors.slice(0, 2).map(nameStr).join(', '))}${e.meta.authors.length > 2 ? ' ほか' : ''}${e.meta.venue ? ' · ' + esc(e.meta.venue) : ''}</div>
       <div class="tagrow">${(e.tags || []).map((t) => `<span class="tchip"><button type="button" data-act="tagfilter" data-tag="${esc(t)}" title="このタグで絞り込む">#${esc(t)}</button><button type="button" data-act="tagrm" data-tag="${esc(t)}" aria-label="タグ ${esc(t)} を外す">×</button></span>`).join('')}<input class="taginput" list="taglist" data-act="tagadd" placeholder="＋タグ" aria-label="タグを追加" maxlength="30"></div></td>
-    <td><select aria-label="状態" data-act="st">${Object.entries(stJa).map(([k, v]) => `<option value="${k}"${k === e.status ? ' selected' : ''}>${v}</option>`).join('')}</select></td>
-    <td><textarea rows="1" aria-label="メモ" data-act="memo" placeholder="メモ">${esc(e.memo)}</textarea></td>
-    <td><button type="button" class="ghost" data-act="del">削除</button></td>
+    <td class="stc"><select aria-label="状態" data-act="st">${Object.entries(stJa).map(([k, v]) => `<option value="${k}"${k === e.status ? ' selected' : ''}>${v}</option>`).join('')}</select></td>
+    <td class="memo"><textarea rows="1" aria-label="メモ" data-act="memo" placeholder="メモ">${esc(e.memo)}</textarea></td>
+    <td class="act"><button type="button" class="ghost" data-act="del">削除</button></td>
   </tr>`).join('') : `<tr><td colspan="5" class="empty">${ledger.length ? '条件に合う文献はありません。' : 'まだ何もありません。論文を調べて「台帳に追加」を押すと、ここに並びます。'}</td></tr>`;
   renderBackupNote();
 }

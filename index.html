@@ -6,8 +6,8 @@
 <title>文献ハブ</title>
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https:; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="description" content="DOI・URL・タイトルから、論文の書誌と本文の入手ルートをまとめて引く個人用ハブ">
-<meta name="theme-color" content="#f2f5f4" media="(prefers-color-scheme: light)" data-scheme="light">
-<meta name="theme-color" content="#131a1c" media="(prefers-color-scheme: dark)" data-scheme="dark">
+<meta name="theme-color" content="#f3f5f4" media="(prefers-color-scheme: light)" data-scheme="light">
+<meta name="theme-color" content="#0f1618" media="(prefers-color-scheme: dark)" data-scheme="dark">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
@@ -35,8 +35,10 @@
       </nav>
     </div>
     <form id="f" class="search-row" role="search">
-      <input id="q" type="search" placeholder="DOI・URL・タイトル" autocomplete="off" aria-label="DOI、URL、タイトル" enterkeyhint="search">
-      <button type="button" id="pasteBtn" class="paste" title="コピーした DOI や URL を貼り付けて調べる">貼り付け</button>
+      <div class="field">
+        <input id="q" type="search" placeholder="DOI・URL・タイトル" autocomplete="off" aria-label="DOI、URL、タイトル" enterkeyhint="search">
+        <button type="button" id="pasteBtn" class="paste" title="コピーした DOI や URL を貼り付けて調べる">貼り付け</button>
+      </div>
       <button class="primary" type="submit" id="go">調べる</button>
     </form>
   </div>
@@ -60,6 +62,15 @@
   </section>
 
   <section class="hint" id="intro" aria-label="入力例">
+    <div class="hero">
+      <p class="hero-lead">論文を<em>探す</em>・本文を<em>手に入れる</em>・<em>控える</em>を、1画面で。</p>
+      <p class="hero-sub">DOI・論文の URL・タイトルを入れると、無料で読める版から図書館・著者への依頼まで、本文にたどり着く道筋を費用の安い順に並べます。</p>
+      <ol class="hero-steps" aria-label="流れ">
+        <li><span class="hs-n">1</span><b>調べる</b><span>OpenAlex・CiNii・NDL などを同時に引く</span></li>
+        <li><span class="hs-n">2</span><b>入手する</b><span>無料版 → 横断検索 → 図書館 → 著者</span></li>
+        <li><span class="hs-n">3</span><b>控える</b><span>台帳・BibTeX・Obsidian・Zotero へ</span></li>
+      </ol>
+    </div>
     <div id="recentBox" hidden>
       <span class="hint-h">最近調べた論文</span>
       <div id="recent" class="chips"></div>
@@ -78,6 +89,7 @@
 
   <section id="cands" class="panel" hidden aria-labelledby="candsTitle">
     <div class="panel-h"><h2 id="candsTitle">候補</h2><span class="sub" id="candsNote"></span></div>
+    <p class="legend" aria-label="色の意味"><span class="lg free">無料版あり</span><span class="lg library">図書館・NDL で探せる</span><span class="lg paid">無料版が見つからない</span></p>
     <div class="cand-tools">
       <button type="button" id="fOa" aria-pressed="false">無料版ありのみ</button>
       <button type="button" id="fJa" aria-pressed="false">日本語のみ</button>
