@@ -55,6 +55,7 @@ function fromOpenAlex(w) {
     retracted: !!w.is_retracted,
     corresponding: (w.authorships || []).findIndex((a) => a.is_corresponding),
     orcids: (w.authorships || []).map((a) => a.author?.orcid || ''),
+    authorIds: (w.authorships || []).map((a) => String(a.author?.id || '').split('/').pop()),
     refIds: (w.referenced_works || []).map((u) => String(u).split('/').pop()),
     relIds: (w.related_works || []).map((u) => String(u).split('/').pop()),
   };
@@ -409,9 +410,26 @@ const SYNC_KEYS = ['email', 'name', 'folder', 'fmt', 'cinii'];   // 端末をま
 const TOMB_KEEP_DAYS = 365;
 const SYNC_FILE = 'bunken-hub-sync.json';
 
+// 「著者で追う」の対象。筆頭著者と責任著者（最大2人）の OpenAlex 著者 ID を、works の filter の形で返す
+function authorWorksFilter(m) {
+  const ids = m?.authorIds || [];
+  const pick = [ids[0], ids[m?.corresponding ?? -1]].filter((id) => /^A\d+$/.test(id || ''));
+  const uniq = [...new Set(pick)];
+  return uniq.length ? `author.id:${uniq.join('|')}` : '';
+}
+
+// 出て1年ほどの論文は、OpenAlex への引用の登録が追いつかず、被引用・参照文献が0件になりやすい。
+// 0件を「無い」と読まないように、そのときだけ注意を出す
+function citationLagNote(m, counts, nowYear = new Date().getFullYear()) {
+  const y = Number(m?.year);
+  if (!y || y < nowYear - 1) return '';
+  if ((counts.cites ?? 1) > 0 && (counts.refs ?? 1) > 0) return '';
+  return '出て間もない論文は、OpenAlex への引用の登録が追いついていないことがあります。0件でも「無い」とは限りません。参照文献は本文の参考文献の節で、被引用は Google Scholar などで確かめてください。';
+}
+
 // 台帳や同期データに保存する書誌は軽くする（関連文献の ID 群は開くたびに取り直せる）
 function compactMeta(m) {
-  const { refIds, relIds, orcids, ...rest } = m || {};
+  const { refIds, relIds, orcids, authorIds, ...rest } = m || {};
   return rest;
 }
 const stamp = (e) => String(e.updatedAt || (e.addedAt ? e.addedAt + 'T00:00:00.000Z' : '') || '');
@@ -633,5 +651,5 @@ if (typeof module !== 'undefined') {
   module.exports = { esc, safeUrl, hasJa, parseInput, splitName, nameStr, fromOpenAlex, fromCSL, fromCiNii, fromWatchPaper, watchTags, fromNdlItem, ZOTERO_API, ZOTERO_BATCH, toZoteroItem, zoteroChildren, parseZoteroWrite, zoteroKeyInfo, zoteroItemUrl, WATCH_RULES, normText, studyFacts, glossaryHits,
     reconstructAbstract, extractDois, bibKey, toBibTeX, toCitation, fileName, requestMail, searchLinks, toObsidian, verJa,
     toRIS, availability, authorLinks, graphLinks, translateUrl, isEmail, bookmarklet, filterLedger,
-    SYNC_KEYS, SYNC_FILE, ghErrorText, compactMeta, mergeLedgers, mergeSync, buildSyncPayload, buildBackup, parseImport, sharedQuery, setupSteps, showSetupCard, fromEuropePmc, fromSemanticScholar, mergeOa, filterCands, normTag, allTags, toCSL, toMarkdownLink, crc32, makeZip, ledgerNotesZip };
+    authorWorksFilter, citationLagNote, SYNC_KEYS, SYNC_FILE, ghErrorText, compactMeta, mergeLedgers, mergeSync, buildSyncPayload, buildBackup, parseImport, sharedQuery, setupSteps, showSetupCard, fromEuropePmc, fromSemanticScholar, mergeOa, filterCands, normTag, allTags, toCSL, toMarkdownLink, crc32, makeZip, ledgerNotesZip };
 }

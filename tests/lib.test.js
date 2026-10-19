@@ -136,6 +136,28 @@ test('OpenAlex の work から撤回・責任著者・参照文献を読む', ()
   assert.equal(m.orcids[1], 'https://orcid.org/0000');
 });
 
+test('著者で追う: 筆頭・責任著者の ID を filter にする', () => {
+  const m = L.fromOpenAlex({ id: 'W1', authorships: [
+    { author: { id: 'https://openalex.org/A1', display_name: 'A B' } },
+    { author: { id: 'https://openalex.org/A2', display_name: 'C D' } },
+    { author: { id: 'https://openalex.org/A3', display_name: 'E F' }, is_corresponding: true }] });
+  assert.deepEqual(m.authorIds, ['A1', 'A2', 'A3']);
+  assert.equal(L.authorWorksFilter(m), 'author.id:A1|A3');
+  assert.equal(L.authorWorksFilter({ authorIds: ['A1'], corresponding: 0 }), 'author.id:A1');
+  assert.equal(L.authorWorksFilter({ authorIds: [''], corresponding: -1 }), '');
+  assert.equal(L.authorWorksFilter({}), '');
+  assert.equal('authorIds' in L.compactMeta(m), false);
+});
+
+test('出て間もない論文の 0 件には注意を出す', () => {
+  assert.match(L.citationLagNote({ year: 2026 }, { cites: 0, refs: 12 }, 2026), /「無い」とは限りません/);
+  assert.match(L.citationLagNote({ year: 2025 }, { cites: 3, refs: 0 }, 2026), /OpenAlex/);
+  assert.equal(L.citationLagNote({ year: 2026 }, { cites: 3, refs: 12 }, 2026), '');
+  assert.equal(L.citationLagNote({ year: 2020 }, { cites: 0, refs: 0 }, 2026), '');
+  assert.equal(L.citationLagNote({ year: '' }, { cites: 0, refs: 0 }, 2026), '');
+  assert.equal(L.citationLagNote({ year: 2026 }, { cites: undefined, refs: 5 }, 2026), '');
+});
+
 test('Europe PMC: 無料の全文リンクと abstract を取り出す', () => {
   const r = L.fromEuropePmc({ pmcid: 'PMC123', isOpenAccess: 'Y', abstractText: '<h4>Background</h4> Text   here.',
     fullTextUrlList: { fullTextUrl: [{ availability: 'Subscription required', documentStyle: 'html', url: 'https://x/paid' }, { availability: 'Open access', documentStyle: 'pdf', url: 'https://europepmc.org/a.pdf' }] } });
