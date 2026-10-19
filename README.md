@@ -20,7 +20,7 @@
    - 3 手続きによる入手（出版社、NDL遠隔複写、個人向けデジタル化資料送信サービス、公共図書館）
    - 4 著者に頼む：**責任著者**を宛先にし、ORCID・researchmap で連絡先を探すリンクと、署名入りの依頼文を出す
 6. 「引用・保存」タブ：参考文献表記 / BibTeX / RIS / Obsidian ノートを切り替えてコピー。保存用ファイル名、このページへのリンク
-7. 「関連文献」タブ：被引用（多い順）・参照文献・関連論文を OpenAlex から並べ、それぞれ入手しやすさの色を付ける。Connected Papers などの図へのリンク
+7. 「関連文献」タブ：被引用（多い順）・参照文献・関連論文・同じ著者（筆頭・責任著者）の他の論文を OpenAlex から並べ、それぞれ入手しやすさの色を付ける。Connected Papers などの図へのリンク。出て1年ほどの論文で被引用・参照文献が0件のときは、OpenAlex の登録が追いついていない可能性を注意として出す
 8. 台帳：状態（未入手 / 入手済 / 読了）・メモ・検索・並べ替え。JSON / BibTeX / RIS / CSV で書き出す。**バックアップを2週間していないと知らせる**
 9. 最近調べた論文、初回のメールアドレス登録の案内、設定ダイアログ、ブックマークレット、ダークモード
 
@@ -61,6 +61,7 @@
 | Retraction Watch | 撤回論文の警告（OpenAlex の `is_retracted`） |
 | researchmap / ORCID | 所属のない人が著者に連絡するための導線 |
 | edu-research-watch | OpenAlex の abstract の復元、Obsidian の frontmatter |
+| [imozuru](https://github.com/MaryCache/imozuru) | 引用だけでなく著者でもたどる。新しい論文の 0 件を「無い」と読まない |
 | Zotero（Web API） | 本文の保管・注釈・引用は自前で作らず Zotero に渡す。Citation.js のような引用形式のライブラリを入れる代わりに、多数の引用形式は Zotero 側で使う |
 
 ## edu-research-watch との連携

@@ -342,19 +342,26 @@ async function loadRelated(m) {
   }
   p.innerHTML = '<p class="empty">読み込み中…</p>';
   const ids = (a) => a.slice(0, 25).join('|');
-  const [refs, cites, rel] = await Promise.allSettled([
+  const byAuthor = authorWorksFilter(m);
+  const [refs, cites, rel, auth] = await Promise.allSettled([
     m.refIds?.length ? fetchWorks(`openalex:${ids(m.refIds)}`) : Promise.resolve([]),
     fetchWorks(`cites:${m.oaid}`, '&sort=cited_by_count:desc'),
     m.relIds?.length ? fetchWorks(`openalex:${ids(m.relIds)}`) : Promise.resolve([]),
+    byAuthor ? fetchWorks(byAuthor, '&sort=cited_by_count:desc') : Promise.resolve([]),
   ]);
   if (current !== m) return;
+  if (auth.status === 'fulfilled') auth.value = auth.value.filter((x) => x.oaid !== m.oaid);
   const groups = [
     ['この論文を引用している（被引用の多い順）', cites],
     ['この論文が参照している', refs],
     ['関連する論文（OpenAlex の推定）', rel],
+    ['同じ著者の他の論文（筆頭・責任著者、被引用の多い順）', auth],
   ];
+  const count = (r) => (r.status === 'fulfilled' ? r.value.length : undefined);
+  const lag = citationLagNote(m, { cites: count(cites), refs: m.refIds?.length ?? count(refs) });
   related = [];
-  p.innerHTML = `<div class="links">${ext}<span class="sub">引用関係を図で見る</span></div>` + groups.map(([h, r]) => {
+  p.innerHTML = `<div class="links">${ext}<span class="sub">引用関係を図で見る</span></div>`
+    + (lag ? `<p class="note">${esc(lag)}</p>` : '') + groups.map(([h, r]) => {
     const items = r.status === 'fulfilled' ? r.value : null;
     if (items) items.sort((a, b) => (b.cited || 0) - (a.cited || 0));
     const html = items ? items.slice(0, 10).map((x) => { related.push(x); return candHTML(x, related.length - 1, 'data-r'); }).join('') : '';
