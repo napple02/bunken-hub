@@ -465,6 +465,14 @@ const sameJson = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 // 並び順や書誌の軽量化の違いで「変更あり」と誤判定しないよう、id と更新時刻だけで比べる
 const sig = (list) => (list || []).map((e) => `${e.id}|${stamp(e)}`).sort().join('\n');
 const pickSync = (settings) => Object.fromEntries(SYNC_KEYS.filter((k) => settings?.[k]).map((k) => [k, settings[k]]));
+// 設定の項目ごとの更新時刻。項目ごとに新しいほうを採るため（全体で1つの時刻だと、2台目でメールアドレスだけ入れたとき、
+// 空のフォルダ欄まで「新しい」扱いになり、1台目の値を消していた）。
+// 項目ごとの時刻（settingsAt）がない古い形式は、全体の時刻を値のある項目にだけ当てる。空の項目は時刻なしとし、相手の値を消さない
+function settingTimes(settings) {
+  const at = settings?.settingsAt || {};
+  const all = String(settings?.settingsUpdatedAt || '');
+  return Object.fromEntries(SYNC_KEYS.map((k) => [k, String(at[k] || (settings?.[k] ? all : ''))]));
+}
 
 // 同期データ（remote）を手元（local）に取り込む。
 // 戻り値: 新しい手元の状態 next と、リモートを更新する必要があるか（push）、手元が変わったか（pull）
@@ -472,15 +480,21 @@ function mergeSync(local, remote, now = new Date()) {
   const rs = remote && remote.settings ? remote : null;
   const merged = mergeLedgers(local, { entries: remote?.ledger || [], tombs: remote?.tombs || [] }, now);
   const lSet = pickSync(local.settings);
-  const lAt = String(local.settings?.settingsUpdatedAt || '');
-  const rAt = String(rs?.settings?.settingsUpdatedAt || '');
-  const useRemote = !!rs && rAt > lAt;
-  const outSet = useRemote ? { ...pickSync(rs.settings) } : lSet;
-  const settingsAt = useRemote ? rAt : lAt;
-  const next = { entries: merged.entries, tombs: merged.tombs, settings: outSet, settingsUpdatedAt: settingsAt };
-  const pull = sig(merged.entries) !== sig(local.entries) || sig(merged.tombs) !== sig(local.tombs) || (useRemote && !sameJson(lSet, outSet));
+  const rSet = pickSync(rs?.settings);
+  const lT = settingTimes(local.settings);
+  const rT = rs ? settingTimes(rs.settings) : {};
+  const outSet = {}; const outAt = {};
+  for (const k of SYNC_KEYS) {
+    const useRemote = !!rs && (rT[k] || '') > lT[k];
+    const v = useRemote ? rSet[k] : lSet[k];
+    if (v) outSet[k] = v;
+    if (useRemote ? rT[k] : lT[k]) outAt[k] = useRemote ? rT[k] : lT[k];
+  }
+  const settingsAt = Object.values(outAt).sort().pop() || '';
+  const next = { entries: merged.entries, tombs: merged.tombs, settings: outSet, settingsAt: outAt, settingsUpdatedAt: settingsAt };
+  const pull = sig(merged.entries) !== sig(local.entries) || sig(merged.tombs) !== sig(local.tombs) || !sameJson(lSet, outSet);
   const push = !remote || sig(merged.entries) !== sig(remote.ledger) || sig(merged.tombs) !== sig(remote.tombs) ||
-    (!useRemote && lAt > rAt && !sameJson(lSet, pickSync(rs?.settings)));
+    !sameJson(rSet, outSet) || !sameJson(rs ? settingTimes(rs.settings) : {}, settingTimes({ ...outSet, settingsAt: outAt }));
   return { next, pull, push };
 }
 
@@ -488,7 +502,7 @@ function mergeSync(local, remote, now = new Date()) {
 function buildSyncPayload(state, now = new Date()) {
   return {
     app: 'bunken-hub', version: 2, updatedAt: now.toISOString(),
-    settings: { ...state.settings, settingsUpdatedAt: state.settingsUpdatedAt || '' },
+    settings: { ...state.settings, settingsAt: state.settingsAt || {}, settingsUpdatedAt: state.settingsUpdatedAt || '' },
     ledger: state.entries.map((e) => ({ ...e, meta: compactMeta(e.meta) })),
     tombs: state.tombs,
   };

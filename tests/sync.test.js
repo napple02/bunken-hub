@@ -148,3 +148,38 @@ test('GitHub の 403 を、原因ごとの直し方にする', () => {
   assert.match(L.ghErrorText({ status: 401 }), /期限が切れて/);
   assert.equal(L.ghErrorText({ status: 500 }), '');
 });
+
+test('同期: 設定は項目ごとに新しいほうを採る。2台目でメールだけ入れても、1台目のフォルダを消さない', () => {
+  // 1台目: フォルダとメールを入れて同期済み
+  const remote = L.buildSyncPayload({ entries: [], tombs: [], settings: { email: 'old@x.jp', folder: 'https://drive.google.com/x' },
+    settingsAt: { email: '2026-10-01T00:00:00Z', folder: '2026-10-01T00:00:00Z' }, settingsUpdatedAt: '2026-10-01T00:00:00Z' }, NOW);
+  // 2台目: 同期の前にメールだけ入れた
+  const local = { entries: [], tombs: [], settings: { email: 'new@x.jp', settingsAt: { email: '2026-10-05T00:00:00Z' }, settingsUpdatedAt: '2026-10-05T00:00:00Z' } };
+  const r = L.mergeSync(local, remote, NOW);
+  assert.deepEqual(r.next.settings, { email: 'new@x.jp', folder: 'https://drive.google.com/x' });
+  assert.equal(r.pull, true);
+  assert.equal(r.push, true);
+  // 1台目が次に同期すると、新しいメールを受け取り、フォルダは残る
+  const back = L.mergeSync({ entries: [], tombs: [], settings: { ...remote.settings } }, L.buildSyncPayload(r.next, NOW), NOW);
+  assert.deepEqual(back.next.settings, { email: 'new@x.jp', folder: 'https://drive.google.com/x' });
+});
+
+test('同期: 項目ごとの時刻がない古い形式でも、空の項目は相手の値を消さない', () => {
+  // 以前の版で、2台目が空のフォルダごと「新しい設定」として push してしまった状態
+  const remote = { app: 'bunken-hub', settings: { email: 'b@x.jp', settingsUpdatedAt: '2026-10-05T00:00:00Z' }, ledger: [], tombs: [] };
+  const local = { entries: [], tombs: [], settings: { email: 'a@x.jp', folder: 'https://drive.google.com/x', settingsUpdatedAt: '2026-10-01T00:00:00Z' } };
+  const r = L.mergeSync(local, remote, NOW);
+  assert.deepEqual(r.next.settings, { email: 'b@x.jp', folder: 'https://drive.google.com/x' });
+  assert.equal(r.push, true);
+});
+
+test('同期: 項目を空にした変更も、項目の時刻が新しければ他の端末へ伝わる', () => {
+  const remote = L.buildSyncPayload({ entries: [], tombs: [], settings: { cinii: 'appid1' }, settingsAt: { cinii: '2026-10-01T00:00:00Z' }, settingsUpdatedAt: '2026-10-01T00:00:00Z' }, NOW);
+  const local = { entries: [], tombs: [], settings: { settingsAt: { cinii: '2026-10-05T00:00:00Z' }, settingsUpdatedAt: '2026-10-05T00:00:00Z' } };
+  const r = L.mergeSync(local, remote, NOW);
+  assert.deepEqual(r.next.settings, {});
+  assert.equal(r.push, true);
+  const other = L.mergeSync({ entries: [], tombs: [], settings: { cinii: 'appid1', settingsAt: { cinii: '2026-10-01T00:00:00Z' } } }, L.buildSyncPayload(r.next, NOW), NOW);
+  assert.deepEqual(other.next.settings, {});
+  assert.equal(other.pull, true);
+});
