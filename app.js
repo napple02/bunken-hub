@@ -703,7 +703,9 @@ const GH = 'https://api.github.com';
 let syncing = false; let syncTimer = 0; let resync = false;
 let syncState = 'off';
 async function gh(path, opts = {}) {
-  const r = await fetch(GH + path, { ...opts, headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${settings.gistToken}`, ...(opts.body ? { 'Content-Type': 'application/json' } : {}) } });
+  // GitHub API は GET を max-age=60 で返す。HTTP キャッシュを通すと、他の端末の push 直後でも最大60秒古い同期データを読み、
+  // それを元に push して相手の変更を一時的に消してしまう。同期は毎回、最新を取りに行く
+  const r = await fetch(GH + path, { cache: 'no-store', ...opts, headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${settings.gistToken}`, ...(opts.body ? { 'Content-Type': 'application/json' } : {}) } });
   if (!r.ok) {
     // 原因を見分けるため、残り回数・スコープ・本文の message を添える（読めなければ無いものとして扱う）
     const e = new Error('HTTP ' + r.status); e.status = r.status;

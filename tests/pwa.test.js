@@ -74,3 +74,9 @@ test('Service Worker: ブラウザの HTTP キャッシュを通さずに最新�
   assert.match(sw, /cache: 'no-cache'/);
   assert.match(sw, /cache: 'reload'/);
 });
+
+test('同期: GitHub API はブラウザの HTTP キャッシュを通さない', () => {
+  // GET /gists/:id は max-age=60。キャッシュの古い同期データを元に push すると、他の端末の変更を上書きする
+  const app = read('app.js');
+  assert.match(app, /async function gh\(path, opts = \{\}\) \{[\s\S]*?fetch\(GH \+ path, \{ cache: 'no-store'/);
+});
