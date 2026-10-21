@@ -20,3 +20,18 @@ jobs:
         run: for f in lib.js app.js pwa.js theme.js sw.js; do node --check "$f"; done
       - name: 単体テストと構成のテスト
         run: npm test
+
+  e2e:
+    # ブラウザでの通しの確認。Playwright は CI の中だけで入れる（package.json は依存なしのまま）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Playwright と Chromium を入れる
+        run: |
+          npm install --no-save --no-package-lock playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: ブラウザでの通しの確認
+        run: npm run e2e
