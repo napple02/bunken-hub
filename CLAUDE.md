@@ -17,7 +17,7 @@
 
 ## コマンド
 - `npm test`：単体テストと構成のテスト（依存なし。CI でも実行）
-- `npm run e2e`：ブラウザでの通しの確認（Playwright が必要。環境変数は `tests/e2e/harness.mjs` の冒頭を参照）
+- `npm run e2e`：ブラウザでの通しの確認（Playwright が必要。環境変数は `tests/e2e/harness.mjs` の冒頭を参照。CI でも実行。Playwright は CI の中だけで入れる）
 
 ## 守ること
 - **CSP（`script-src 'self'`）を崩さない**：インラインの `<script>`・`on…=` 属性・`eval` は使わない。スクリプトを足すときは別ファイルにする
