@@ -16,7 +16,7 @@
 4. **入手しやすさの帯**：無料 PDF あり / 図書館経由 / 有料のみ を一目で示す。**撤回された論文には警告**を出す
 5. 「入手する」タブ：本文の入手ルートを、費用の安い順に並べる
    - 1 無料で読める版（OpenAlex / Unpaywall。出版社版・著者最終稿・プレプリントを区別する）
-   - 2 横断検索リンク（Google Scholar, CiNii, J-STAGE, IRDB, NDLサーチ, NDLデジタルコレクション, ジャパンサーチ, CORE, Semantic Scholar, PubMed, BASE）
+   - 2 横断検索リンク（Google Scholar, CiNii, J-STAGE, IRDB, NDLサーチ, CiNii Books, WorldCat, J-GLOBAL, NDLデジタルコレクション, ジャパンサーチ, CORE, Semantic Scholar, PubMed, BASE）
    - 3 手続きによる入手（出版社、NDL遠隔複写、個人向けデジタル化資料送信サービス、公共図書館）
    - 4 著者に頼む：**責任著者**を宛先にし、ORCID・researchmap で連絡先を探すリンクと、署名入りの依頼文を出す
 6. 「引用・保存」タブ：参考文献表記 / BibTeX / RIS / Obsidian ノートを切り替えてコピー。保存用ファイル名、このページへのリンク

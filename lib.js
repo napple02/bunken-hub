@@ -135,12 +135,17 @@ function searchLinks(m) {
   const t = m.title || '';
   const q = encodeURIComponent(t);
   const d = m.doi;
+  // 図書の所蔵は誌名（論文なら掲載誌）で引くと、複写を頼める図書館が分かる
+  const hold = encodeURIComponent(m.venue || t);
   const L = [
     ['Google Scholar', `https://scholar.google.com/scholar?q=${d ? encodeURIComponent('"' + d + '"') + '+OR+' : ''}${encodeURIComponent('"' + t + '"')}`],
     ['CiNii Research', `https://cir.nii.ac.jp/all?q=${q}`],
     ['J-STAGE', `https://www.jstage.jst.go.jp/result/global/-char/ja?globalSearchKey=${q}`],
     ['IRDB（機関リポジトリ）', `https://irdb.nii.ac.jp/search?kywd=${q}`],
     ['NDLサーチ', `https://ndlsearch.ndl.go.jp/search?cs=bib&keyword=${q}`],
+    [m.venue ? 'CiNii Books（掲載誌の所蔵館）' : 'CiNii Books（大学図書館）', `https://ci.nii.ac.jp/books/search?q=${hold}`],
+    [m.venue ? 'WorldCat（掲載誌の所蔵館）' : 'WorldCat（世界の図書館）', `https://search.worldcat.org/ja/search?q=${hold}`],
+    ['J-GLOBAL', `https://jglobal.jst.go.jp/search/anythings#${encodeURIComponent(JSON.stringify({ keyword: t }))}`],
     ['CORE', `https://core.ac.uk/search?q=${encodeURIComponent('"' + t + '"')}`],
     ['Semantic Scholar', `https://www.semanticscholar.org/search?q=${q}`],
     ['PubMed', `https://pubmed.ncbi.nlm.nih.gov/?term=${q}`],
