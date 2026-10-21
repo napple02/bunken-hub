@@ -16,8 +16,14 @@ const SKEY = 'bunkenhub.settings.v1';
 let settings = store.get(SKEY, {});
 const saveSettings = () => store.set(SKEY, settings);
 const nowIso = () => new Date().toISOString();
-// 端末をまたいで共有する設定を変えたときに呼ぶ。更新時刻を進めて、同期の対象にする
-function markSettingsChanged() { settings.settingsUpdatedAt = nowIso(); saveSettings(); scheduleSync(); }
+// 端末をまたいで共有する設定を変えたときに呼ぶ。変えた項目の更新時刻を進めて、同期の対象にする（項目ごとに新しいほうが勝つ）
+function stampSettings(keys) {
+  const t = nowIso();
+  settings.settingsAt = { ...(settings.settingsAt || {}) };
+  for (const k of keys) settings.settingsAt[k] = t;
+  settings.settingsUpdatedAt = t;
+}
+function markSettingsChanged(...keys) { stampSettings(keys); saveSettings(); scheduleSync(); }
 // 表示テーマ（端末ごと）。空なら端末の設定に合わせる
 function applyTheme() {
   const t = settings.theme === 'light' || settings.theme === 'dark' ? settings.theme : '';
@@ -383,7 +389,7 @@ $('#detail').addEventListener('click', (ev) => {
     return;
   }
   const fb = t.closest('[data-fmt]');
-  if (fb) { settings.fmt = fb.dataset.fmt; markSettingsChanged(); $('#p_cite').innerHTML = citePanel(current); return; }
+  if (fb) { settings.fmt = fb.dataset.fmt; markSettingsChanged('fmt'); $('#p_cite').innerHTML = citePanel(current); return; }
   const cb = t.closest('[data-copy]');
   if (cb) { const el = $('#c_' + cb.dataset.copy); copy(el.textContent, el); return; }
   if (t.closest('[data-share]')) { navigator.share({ title: current.title, text: toCitation(current), url: shareUrl(current) }).catch(() => {}); return; }
@@ -404,7 +410,7 @@ $('#detail').addEventListener('submit', async (ev) => {
   ev.preventDefault();
   const v = $('input', f).value.trim();
   if (!isEmail(v)) { toast('メールアドレスの形をご確認ください'); return; }
-  settings.email = v; markSettingsChanged(); refreshSetup();
+  settings.email = v; markSettingsChanged('email'); refreshSetup();
   toast('登録しました。調べ直します');
   if (current?.doi) lookupDoi(current.doi, current);
 });
@@ -572,10 +578,10 @@ $('#imJson').addEventListener('change', async (ev) => {
       // バックアップ。同じ文献は更新が新しいほうを残し、設定は手元で未入力のものだけ補う
       const before = ledger.length;
       ({ entries: ledger, tombs } = mergeLedgers({ entries: ledger, tombs }, { entries: imp.entries, tombs: [] }));
-      let filled = 0;
-      for (const k of SYNC_KEYS) if (!settings[k] && imp.settings[k]) { settings[k] = imp.settings[k]; filled++; }
-      if (filled) { markSettingsChanged(); refreshSetup(); }
-      saveLedger(); toast(`${Math.max(0, ledger.length - before)} 件を読み込みました${filled ? `（設定 ${filled} 項目も引き継ぎました）` : ''}`);
+      const filled = SYNC_KEYS.filter((k) => !settings[k] && imp.settings[k]);
+      for (const k of filled) settings[k] = imp.settings[k];
+      if (filled.length) { markSettingsChanged(...filled); refreshSetup(); }
+      saveLedger(); toast(`${Math.max(0, ledger.length - before)} 件を読み込みました${filled.length ? `（設定 ${filled.length} 項目も引き継ぎました）` : ''}`);
     }
   } catch { toast('読み込めませんでした。このツールか edu-research-watch が書き出した JSON を選んでください'); }
   ev.target.value = '';
@@ -615,7 +621,7 @@ function renderZoteroInfo(msg) {
   $('#zOff').hidden = !settings.zoteroKey;
 }
 function zoteroRoute(m) {
-  if (!settings.zoteroKey || !zUser()) return '<p class="sub">書誌を Zotero に送ると、PDF の保管・注釈や、Word での引用に使えます。</p><div class="row"><button type="button" data-open-settings="zotero">Zotero と連携する</button></div>';
+  if (!settings.zoteroKey || !zUser()) return `<p class="sub">書誌を Zotero に送ると、PDF の保管・注釈や、Word での引用に使えます。${settings.gistToken ? 'Zotero の API キーは、安全のため同期せず、端末ごとに入れます。' : ''}</p><div class="row"><button type="button" data-open-settings="zotero">Zotero と連携する</button></div>`;
   const e = inLedger(m);
   if (e?.zotero) { const url = zoteroItemUrl(zUser().name, e.zotero); return `<p class="sub">送信済みです。</p><div class="row">${url ? link(url, 'Zotero で開く', 'btnlink') : ''}</div>`; }
   return '<p class="sub">書誌・abstract・タグ・メモと、無料版へのリンクを送ります（PDF のファイルは送りません）。台帳にない論文は、台帳にも追加します。</p><div class="row"><button type="button" class="primary" data-zotero>Zotero に送る</button></div>';
@@ -703,7 +709,9 @@ const GH = 'https://api.github.com';
 let syncing = false; let syncTimer = 0; let resync = false;
 let syncState = 'off';
 async function gh(path, opts = {}) {
-  const r = await fetch(GH + path, { ...opts, headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${settings.gistToken}`, ...(opts.body ? { 'Content-Type': 'application/json' } : {}) } });
+  // GitHub API は GET を max-age=60 で返す。HTTP キャッシュを通すと、他の端末の push 直後でも最大60秒古い同期データを読み、
+  // それを元に push して相手の変更を一時的に消してしまう。同期は毎回、最新を取りに行く
+  const r = await fetch(GH + path, { cache: 'no-store', ...opts, headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${settings.gistToken}`, ...(opts.body ? { 'Content-Type': 'application/json' } : {}) } });
   if (!r.ok) {
     // 原因を見分けるため、残り回数・スコープ・本文の message を添える（読めなければ無いものとして扱う）
     const e = new Error('HTTP ' + r.status); e.status = r.status;
@@ -788,7 +796,7 @@ async function syncNow({ quiet = false } = {}) {
 function applyMerged(next) {
   ledger = next.entries; tombs = next.tombs;
   for (const k of SYNC_KEYS) { if (next.settings[k]) settings[k] = next.settings[k]; else delete settings[k]; }
-  settings.settingsUpdatedAt = next.settingsUpdatedAt;
+  settings.settingsAt = next.settingsAt; settings.settingsUpdatedAt = next.settingsUpdatedAt;
   persistLedger(); saveSettings();
   renderLedger(); refreshSetup();
   if (current && $('#lctl')) $('#lctl').innerHTML = ledgerControl(current);
@@ -833,7 +841,7 @@ function saveSettingsForm() {
   const folder = $('#s_folder').value.trim();
   if (email && !isEmail(email)) return 'メールアドレスの形をご確認ください。';
   if (folder && !safeUrl(folder)) return 'フォルダの URL は https:// から始まる形で入れてください。';
-  const before = JSON.stringify(SYNC_KEYS.map((k) => settings[k] || ''));
+  const before = Object.fromEntries(SYNC_KEYS.map((k) => [k, settings[k] || '']));
   for (const [k, s] of Object.entries(sMap)) settings[k] = $(s).value.trim();
   settings.theme = $('#s_theme').value;
   const token = $('#s_token').value.trim();
@@ -842,7 +850,8 @@ function saveSettingsForm() {
   // Zotero のキーを書き換えて「保存」した場合は、接続を確かめ直すまで未接続として扱う
   const zkey = $('#s_zkey').value.trim();
   if (zkey !== (settings.zoteroKey || '')) { delete settings.zoteroUser; if (zkey) settings.zoteroKey = zkey; else delete settings.zoteroKey; }
-  if (JSON.stringify(SYNC_KEYS.map((k) => settings[k] || '')) !== before) settings.settingsUpdatedAt = nowIso();
+  const changed = SYNC_KEYS.filter((k) => (settings[k] || '') !== before[k]);
+  if (changed.length) stampSettings(changed);
   saveSettings(); applyTheme(); refreshSetup();
   return '';
 }
@@ -899,7 +908,7 @@ $('#setupList').addEventListener('submit', (ev) => {
     : key === 'folder' && !safeUrl(v) ? 'https:// から始まる URL を入れてください。' : '';
   const p = f.nextElementSibling;
   if (err) { p.textContent = err; p.hidden = false; return; }
-  settings[key] = v; markSettingsChanged(); refreshSetup(); toast('登録しました');
+  settings[key] = v; markSettingsChanged(key); refreshSetup(); toast('登録しました');
   if (key === 'email' && current?.doi) lookupDoi(current.doi, current);
 });
 $('#setupList').addEventListener('click', async (ev) => {

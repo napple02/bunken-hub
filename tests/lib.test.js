@@ -80,6 +80,17 @@ test('検索リンクに NDL デジタルコレクションとジャパンサー
   assert.ok(names.includes('ジャパンサーチ'));
 });
 
+test('検索リンク: CiNii Books・WorldCat は掲載誌で所蔵を引き、J-GLOBAL は題名で引く', () => {
+  const links = Object.fromEntries(L.searchLinks(ja));
+  assert.equal(links['CiNii Books（掲載誌の所蔵館）'], `https://ci.nii.ac.jp/books/search?q=${encodeURIComponent('化学と教育')}`);
+  assert.equal(links['WorldCat（掲載誌の所蔵館）'], `https://search.worldcat.org/ja/search?q=${encodeURIComponent('化学と教育')}`);
+  assert.equal(decodeURIComponent(links['J-GLOBAL'].split('#')[1]), JSON.stringify({ keyword: ja.title }));
+  // 掲載誌のない図書は書名で引く
+  const book = Object.fromEntries(L.searchLinks({ ...ja, venue: '' }));
+  assert.equal(book['CiNii Books（大学図書館）'], `https://ci.nii.ac.jp/books/search?q=${encodeURIComponent(ja.title)}`);
+  assert.ok(book['WorldCat（世界の図書館）']);
+});
+
 test('RIS', () => {
   const r = L.toRIS(en);
   assert.match(r, /^TY  - JOUR\nTI  - Deep learning\nAU  - LeCun, Yann/);
