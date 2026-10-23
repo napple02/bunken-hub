@@ -1,0 +1,11 @@
+# GitHub Actions の更新提案（月1回・1つの PR にまとめる）。package.json は依存なしのため対象外。
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    groups:
+      github-actions:
+        patterns: ["*"]
+    open-pull-requests-limit: 2
