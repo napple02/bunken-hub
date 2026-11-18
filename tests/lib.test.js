@@ -256,6 +256,6 @@ test('Obsidian ノートに訳題・研究の型・サンプル数を入れる',
 
 test('sync-watch-rules.mjs で取り込んだ区間の形が保たれている', () => {
   const src = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'lib.js'), 'utf8');
-  assert.match(src, /\/\/ <watch-rules>[^\n]*\nconst WATCH_RULES = \{.*\};\n\/\/ <\/watch-rules>/);
+  assert.match(src.replace(/\r\n/g, '\n'), /\/\/ <watch-rules>[^\n]*\nconst WATCH_RULES = \{.*\};\n\/\/ <\/watch-rules>/);
   assert.equal(L.WATCH_RULES.schema_version, 1);
 });
