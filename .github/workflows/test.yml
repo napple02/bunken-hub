@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
       - name: 構文を確かめる
         run: for f in lib.js app.js pwa.js theme.js sw.js; do node --check "$f"; done
       - name: 単体テストと構成のテスト
@@ -29,7 +29,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
       - name: Playwright と Chromium を入れる
         run: |
           npm install --no-save --no-package-lock playwright@1.56.1
